@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "name": "mercado-dubairro",
+  "outputDirectory": "public",
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/$1"
+    }
+  ]
+}
