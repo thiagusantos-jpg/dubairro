@@ -4,3 +4,11 @@ plotly>=5.18.0
 streamlit-option-menu==0.3.13
 openpyxl>=3.1.0
 numpy>=1.24.0
+
+# Integração Mobne
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# Opcional: Para sincronização assíncrona
+aiohttp>=3.9.0
+APScheduler>=3.10.0
