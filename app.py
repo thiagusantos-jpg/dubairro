@@ -19,6 +19,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
 from pathlib import Path
+from auth import require_auth, init_auth_session, is_authenticated, logout
+from data_processor import DataProcessor
 
 # ============================================================
 # CONFIGURAÇÃO GERAL
@@ -633,9 +635,114 @@ def page_visao_futurista(data):
 
 
 # ============================================================
+# PÁGINA 7: IMPORTAÇÃO DE DADOS (ADMIN)
+# ============================================================
+@require_auth
+def page_importacao_dados():
+    st.markdown("## 📥 Importação de Dados")
+    st.markdown("*Carregue dados em Excel para análise*")
+    st.markdown("---")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("### 📋 Instruções")
+        st.markdown("""
+        **Formatos Aceitos:**
+        - **Vendas**: Data, Categoria, Produto, Quantidade, Valor_Unitario, Vlr_Venda, Custo, Qtde_Documentos
+        - **Produtos**: Produto, Categoria, Custo_Medio, Preco, Estoque
+        - **Simples**: Data, Categoria, Produto, Faturamento
+
+        **Dicas:**
+        1. Use colunas com nomes exatos
+        2. Máximo 5MB por arquivo
+        3. Formato: .xlsx
+        """)
+
+    with col2:
+        st.markdown("### 🔒 Segurança")
+        st.markdown(f"""
+        **Usuário:** {st.session_state.get('username', 'Admin')}
+
+        **Últimos uploads:**
+        - Nenhum ainda nesta sessão
+        """)
+
+    st.markdown("---")
+
+    # Upload do arquivo
+    uploaded_file = st.file_uploader(
+        "Selecione um arquivo Excel",
+        type=["xlsx", "xls"],
+        accept_multiple_files=False,
+        help="Máximo 5MB"
+    )
+
+    if uploaded_file is not None:
+        try:
+            # Detectar tipo de dados
+            df = pd.read_excel(uploaded_file)
+            data_type = DataProcessor.detect_format(df)
+
+            st.info(f"📊 Formato detectado: **{data_type.upper()}**")
+
+            # Validar dados
+            is_valid, message = DataProcessor.validate_data(df, data_type)
+            st.markdown(message)
+
+            if is_valid:
+                # Mostrar preview
+                st.markdown("### 👁️ Preview dos Dados")
+                st.dataframe(df.head(10), use_container_width=True)
+
+                st.markdown(f"**Total de linhas:** {len(df)}")
+
+                # Processamento
+                if st.button("✅ Processar e Salvar Dados", type="primary"):
+                    with st.spinner("⏳ Processando dados..."):
+                        try:
+                            # Processar dados conforme tipo
+                            if data_type == 'vendas':
+                                df_processado = DataProcessor.process_vendas(df)
+                                mes = df_processado['DATA'].dt.month.iloc[0]
+                                ano = df_processado['DATA'].dt.year.iloc[0]
+                                data_dict = DataProcessor.aggregate_to_monthly(df_processado, mes, ano)
+                            elif data_type == 'produtos':
+                                df_processado = DataProcessor.process_produtos(df)
+                                data_dict = {'dim_produtos': df_processado}
+                            else:
+                                data_dict = {'dados_importados': df}
+
+                            # Salvar dados
+                            success, filepath = DataProcessor.save_processed_data(data_dict)
+
+                            if success:
+                                st.success(f"✅ Dados salvos com sucesso em:\n`{filepath}`")
+                                st.markdown("---")
+                                st.markdown("### 📊 Resumo do Processamento")
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.metric("Linhas Importadas", len(df))
+                                with col2:
+                                    st.metric("Tipo de Dado", data_type.upper())
+                                with col3:
+                                    st.metric("Status", "✅ Sucesso")
+                            else:
+                                st.error(f"❌ {filepath}")
+
+                        except Exception as e:
+                            st.error(f"❌ Erro ao processar: {str(e)}")
+
+        except Exception as e:
+            st.error(f"❌ Erro ao ler arquivo: {str(e)}")
+
+
+# ============================================================
 # SIDEBAR E NAVEGAÇÃO
 # ============================================================
 def main():
+    init_auth_session()
+
     with st.sidebar:
         logo_path = Path("logo_dubairro.png")
         if logo_path.exists():
@@ -645,10 +752,16 @@ def main():
         st.markdown("**Painel dos Sócios**")
         st.markdown("---")
 
-        pagina = st.radio("Navegação", [
+        pages = [
             "📊 Resumo Executivo", "💰 Inteligência de Preços", "🗺️ Mapa de Produtos",
             "🔍 Diagnóstico de Faturamento", "📈 Sazonalidade e Tendências", "🔮 Visão Futurista",
-        ], label_visibility="collapsed")
+        ]
+
+        # Adicionar página de importação se autenticado
+        if is_authenticated():
+            pages.append("📥 Importação de Dados")
+
+        pagina = st.radio("Navegação", pages, label_visibility="collapsed")
 
         st.markdown("---")
         st.markdown("##### 🎛️ Simulador")
@@ -681,6 +794,7 @@ def main():
     elif "Diagnóstico" in pagina: page_diagnostico(data)
     elif "Sazonalidade" in pagina: page_sazonalidade(data)
     elif "Futurista" in pagina: page_visao_futurista(data)
+    elif "Importação" in pagina: page_importacao_dados()
 
 if __name__ == "__main__":
     main()
