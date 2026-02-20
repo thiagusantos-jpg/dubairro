@@ -761,6 +761,283 @@ function switchTab(btn, tabId) {
 }
 
 // ============================================================
+// PAGE 7: IMPORTAÇÃO DE DADOS
+// ============================================================
+function pageImportacao() {
+  const html = `
+    <h1>📥 Importação de Dados</h1>
+    <p style="color:#666;margin-bottom:20px;">Carregue dados em Excel para análise</p>
+    <hr>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+      <div>
+        <h3>📋 Instruções</h3>
+        <div class="import-instructions">
+          <p><strong>Formatos Aceitos:</strong></p>
+          <ul>
+            <li><strong>Vendas:</strong> Data, Categoria, Produto, Quantidade, Valor_Unitario, Vlr_Venda, Custo, Vlr_Lucro, Qtde_Documentos</li>
+            <li><strong>Produtos:</strong> Produto, Categoria, Custo_Medio, Preco, Estoque</li>
+            <li><strong>Simples:</strong> Data, Categoria, Produto, Faturamento</li>
+          </ul>
+          <p><strong>Dicas:</strong></p>
+          <ol>
+            <li>Use colunas com nomes exatos</li>
+            <li>Máximo 5MB por arquivo</li>
+            <li>Formato: .xlsx ou .xls</li>
+          </ol>
+        </div>
+      </div>
+
+      <div>
+        <h3>🔒 Segurança</h3>
+        <div class="import-security">
+          <p><strong>Status:</strong> ✅ Administrador</p>
+          <p><strong>Últimos uploads:</strong></p>
+          <ul>
+            <li id="last-upload" style="color:#999;">Nenhum ainda nesta sessão</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <hr>
+
+    <div class="import-upload-area" id="upload-area">
+      <input type="file" id="excel-file" accept=".xlsx,.xls" style="display:none;" onchange="handleFileSelect(event)">
+      <div style="text-align:center;padding:30px;background:#f9f9f9;border:2px dashed #ccc;border-radius:8px;cursor:pointer;" onclick="document.getElementById('excel-file').click();">
+        <p style="font-size:24px;">📂</p>
+        <p style="font-size:16px;font-weight:bold;">Clique para selecionar ou arraste um arquivo aqui</p>
+        <p style="color:#999;">Formatos aceitos: .xlsx, .xls (Máximo 5MB)</p>
+      </div>
+    </div>
+
+    <div id="preview-container" style="display:none;margin-top:30px;">
+      <h3>👁️ Preview dos Dados</h3>
+      <div id="format-info" style="padding:10px;background:#e3f2fd;border-radius:4px;margin-bottom:10px;"></div>
+      <div id="validation-info" style="padding:10px;margin-bottom:10px;"></div>
+      <div id="data-table" style="max-height:400px;overflow-y:auto;margin-bottom:10px;"></div>
+      <button class="btn-import" onclick="processAndSaveData()">✅ Processar e Salvar Dados</button>
+      <button class="btn-cancel" onclick="resetUpload()">❌ Cancelar</button>
+    </div>
+
+    <div id="result-container" style="display:none;margin-top:30px;">
+      <div id="result-message"></div>
+      <button class="btn-import" onclick="resetUpload()">🔄 Importar Novo Arquivo</button>
+    </div>
+  `;
+
+  document.getElementById('content').innerHTML = html;
+
+  // Drag and drop
+  const uploadArea = document.getElementById('upload-area');
+  uploadArea.addEventListener('dragover', e => {
+    e.preventDefault();
+    uploadArea.style.background = '#f0f0f0';
+  });
+  uploadArea.addEventListener('dragleave', e => {
+    e.preventDefault();
+    uploadArea.style.background = 'transparent';
+  });
+  uploadArea.addEventListener('drop', e => {
+    e.preventDefault();
+    uploadArea.style.background = 'transparent';
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      document.getElementById('excel-file').files = files;
+      handleFileSelect({target: {files: files}});
+    }
+  });
+}
+
+let uploadedData = null;
+let detectedFormat = null;
+
+function handleFileSelect(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = e.target.result;
+      const workbook = XLSX.read(data, {type: 'array'});
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const json = XLSX.utils.sheet_to_json(worksheet);
+
+      if (json.length === 0) {
+        showError('❌ Arquivo vazio!');
+        return;
+      }
+
+      uploadedData = json;
+      detectedFormat = detectExcelFormat(json[0]);
+
+      // Validar
+      const {isValid, message} = validateExcelData(json, detectedFormat);
+
+      // Mostrar preview
+      document.getElementById('upload-area').style.display = 'none';
+      document.getElementById('preview-container').style.display = 'block';
+
+      document.getElementById('format-info').innerHTML = `📊 <strong>Formato detectado:</strong> ${detectedFormat.toUpperCase()}`;
+      document.getElementById('validation-info').innerHTML = `<div style="padding:8px;border-radius:4px;background:${isValid ? '#c8e6c9' : '#ffcdd2'};color:${isValid ? '#2e7d32' : '#c62828'};">${message}</div>`;
+
+      // Tabela
+      const table = createDataTable(json.slice(0, 10));
+      document.getElementById('data-table').innerHTML = table;
+      document.getElementById('data-table').innerHTML += `<p style="color:#999;margin-top:10px;"><strong>Total de linhas:</strong> ${json.length}</p>`;
+
+      if (!isValid) {
+        document.querySelector('.btn-import').disabled = true;
+        document.querySelector('.btn-import').style.opacity = '0.5';
+      }
+    } catch (err) {
+      showError(`❌ Erro ao ler arquivo: ${err.message}`);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function detectExcelFormat(firstRow) {
+  const keys = Object.keys(firstRow).map(k => k.toUpperCase().trim());
+
+  // Vendas
+  if (keys.includes('VLR_VENDA') && keys.includes('CUSTO') && keys.includes('QTDE_DOCUMENTOS')) {
+    return 'vendas';
+  }
+
+  // Produtos
+  if (keys.includes('CUSTO_MEDIO') && keys.includes('PRECO') && keys.includes('ESTOQUE')) {
+    return 'produtos';
+  }
+
+  // Simples
+  if (keys.includes('DATA') && keys.includes('CATEGORIA') && keys.includes('PRODUTO') && keys.includes('FATURAMENTO')) {
+    return 'simples';
+  }
+
+  return 'desconhecido';
+}
+
+function validateExcelData(data, format) {
+  const expectedColumns = {
+    'vendas': ['Data', 'Categoria', 'Produto', 'Quantidade', 'Valor_Unitario', 'Vlr_Venda', 'Custo', 'Vlr_Lucro', 'Qtde_Documentos'],
+    'produtos': ['Produto', 'Categoria', 'Custo_Medio', 'Preco', 'Estoque'],
+    'simples': ['Data', 'Categoria', 'Produto', 'Faturamento']
+  };
+
+  const expected = expectedColumns[format] || [];
+  const actual = Object.keys(data[0]).map(k => k.trim());
+  const actualUpper = actual.map(k => k.toUpperCase());
+  const expectedUpper = expected.map(k => k.toUpperCase());
+
+  const missing = expectedUpper.filter(col => !actualUpper.includes(col));
+
+  if (missing.length > 0) {
+    return {
+      isValid: false,
+      message: `❌ Colunas faltando: ${missing.join(', ')}`
+    };
+  }
+
+  return {
+    isValid: true,
+    message: '✅ Dados validados com sucesso'
+  };
+}
+
+function createDataTable(data) {
+  if (!data || data.length === 0) return '<p>Sem dados</p>';
+
+  const keys = Object.keys(data[0]);
+  let html = '<div class="data-table-container"><table class="data-table"><thead><tr>';
+
+  keys.forEach(k => html += `<th>${k}</th>`);
+  html += '</tr></thead><tbody>';
+
+  data.forEach(row => {
+    html += '<tr>';
+    keys.forEach(k => {
+      let val = row[k];
+      if (typeof val === 'number') val = val.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      html += `<td>${val || '-'}</td>`;
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  return html;
+}
+
+function processAndSaveData() {
+  const btn = document.querySelector('.btn-import');
+  btn.disabled = true;
+  btn.textContent = '⏳ Processando...';
+
+  setTimeout(() => {
+    try {
+      let processedData = uploadedData;
+
+      // Normalizar nomes de colunas
+      processedData = processedData.map(row => {
+        const newRow = {};
+        Object.keys(row).forEach(key => {
+          newRow[key.toUpperCase().trim()] = row[key];
+        });
+        return newRow;
+      });
+
+      // Salvar no localStorage (simulando o backend)
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const key = `data_upload_${detectedFormat}_${timestamp}`;
+      localStorage.setItem(key, JSON.stringify(processedData));
+
+      // Atualizar último upload
+      document.getElementById('last-upload').textContent = `✅ ${detectedFormat.toUpperCase()} - ${new Date().toLocaleString('pt-BR')}`;
+
+      // Mostrar resultado
+      document.getElementById('preview-container').style.display = 'none';
+      document.getElementById('result-container').style.display = 'block';
+      document.getElementById('result-message').innerHTML = `
+        <div style="padding:15px;background:#c8e6c9;border-radius:4px;border-left:4px solid #2e7d32;">
+          <h3 style="color:#2e7d32;margin:0 0 10px 0;">✅ Dados salvos com sucesso!</h3>
+          <div style="color:#1b5e20;">
+            <p><strong>Tipo:</strong> ${detectedFormat.toUpperCase()}</p>
+            <p><strong>Linhas:</strong> ${uploadedData.length}</p>
+            <p><strong>Armazenado em:</strong> localStorage (${key})</p>
+          </div>
+        </div>
+      `;
+    } catch (err) {
+      showError(`❌ Erro ao processar: ${err.message}`);
+    }
+
+    btn.disabled = false;
+    btn.textContent = '✅ Processar e Salvar Dados';
+  }, 500);
+}
+
+function resetUpload() {
+  document.getElementById('excel-file').value = '';
+  document.getElementById('upload-area').style.display = 'block';
+  document.getElementById('preview-container').style.display = 'none';
+  document.getElementById('result-container').style.display = 'none';
+  uploadedData = null;
+  detectedFormat = null;
+}
+
+function showError(message) {
+  document.getElementById('preview-container').style.display = 'none';
+  document.getElementById('result-container').style.display = 'block';
+  document.getElementById('result-message').innerHTML = `
+    <div style="padding:15px;background:#ffcdd2;border-radius:4px;border-left:4px solid #c62828;color:#b71c1c;">
+      ${message}
+    </div>
+  `;
+}
+
+// ============================================================
 // NAVIGATION
 // ============================================================
 function navigate(page) {
@@ -775,6 +1052,7 @@ function navigate(page) {
     case 'diagnostico': pageDiagnostico(); break;
     case 'sazonalidade': pageSazonalidade(); break;
     case 'visao': pageVisao(); break;
+    case 'importacao': pageImportacao(); break;
   }
   window.scrollTo(0, 0);
 }
