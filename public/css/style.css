@@ -517,3 +517,70 @@ body {
         grid-template-columns: 1fr;
     }
 }
+
+/* ============================================================
+   IMPORT PAGE
+   ============================================================ */
+.import-instructions, .import-security {
+    background: #f9f9f9;
+    padding: 16px;
+    border-radius: 8px;
+    border-left: 4px solid var(--yellow);
+}
+
+.import-instructions ul, .import-instructions ol {
+    margin-left: 20px;
+    margin-top: 8px;
+}
+
+.import-instructions li, .import-security li {
+    margin-bottom: 6px;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.import-upload-area {
+    margin: 20px 0;
+    transition: all 0.3s;
+}
+
+.import-upload-area:hover {
+    opacity: 0.8;
+}
+
+.btn-import, .btn-cancel {
+    padding: 12px 24px;
+    margin-right: 8px;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-import {
+    background: var(--yellow);
+    color: var(--dark);
+}
+
+.btn-import:hover {
+    background: #FFB300;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.btn-import:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-cancel {
+    background: #e0e0e0;
+    color: var(--dark);
+}
+
+.btn-cancel:hover {
+    background: #d0d0d0;
+}
