@@ -1,11 +1,44 @@
 {
-  "version": 2,
-  "name": "mercado-dubairro",
-  "outputDirectory": "public",
+  "buildCommand": "npm run build || echo 'No build command'",
+  "outputDirectory": ".",
+  "framework": "static",
+  "public": true,
+  "headers": [
+    {
+      "source": "/data/:file",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600"
+        }
+      ]
+    }
+  ],
   "routes": [
     {
-      "src": "/(.*)",
-      "dest": "/$1"
+      "src": "/data/(.*)\\.json$",
+      "dest": "/data/$1.json",
+      "methods": ["GET"]
+    },
+    {
+      "src": "/(?!data/).*",
+      "dest": "/index.html",
+      "methods": ["GET"]
     }
-  ]
+  ],
+  "cleanUrls": false,
+  "trailingSlash": false
 }

@@ -82,9 +82,24 @@ function margemColor(md) {
 // ============================================================
 async function loadData() {
   const files = ['vendas_mensais', 'vendas_diarias', 'produtos', 'calendario', 'yoy', 'erosao'];
-  const promises = files.map(f => fetch(`data/${f}.json`).then(r => r.json()));
-  const results = await Promise.all(promises);
-  files.forEach((f, i) => DATA[f] = results[i]);
+  const promises = files.map(f =>
+    fetch(`/data/${f}.json`)
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+        return r.json();
+      })
+      .catch(err => {
+        console.error(`Erro ao carregar ${f}.json:`, err);
+        throw new Error(`Falha ao carregar ${f}.json: ${err.message}`);
+      })
+  );
+
+  try {
+    const results = await Promise.all(promises);
+    files.forEach((f, i) => DATA[f] = results[i]);
+  } catch (error) {
+    throw new Error(`Erro ao carregar dados: ${error.message}`);
+  }
 }
 
 // ============================================================
@@ -1079,13 +1094,33 @@ function updateCustoFixo() {
 // INIT
 // ============================================================
 async function init() {
+  const debugDiv = document.getElementById('loading-debug');
   try {
+    if (debugDiv) debugDiv.textContent = 'Iniciando carregamento de dados...';
     await loadData();
+    if (debugDiv) debugDiv.textContent = '✅ Dados carregados com sucesso!';
     document.getElementById('loading').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
     navigate('resumo');
   } catch (e) {
-    document.getElementById('loading').innerHTML = `<div style="color:red;text-align:center"><h3>Erro ao carregar dados</h3><p>${e.message}</p></div>`;
+    console.error('Erro ao carregar aplicação:', e);
+    const errorHTML = `
+      <div style="color:red;text-align:center;padding:20px;">
+        <h3>❌ Erro ao carregar dados</h3>
+        <p style="margin:15px 0; font-size:14px;"><strong>${e.message}</strong></p>
+        <div style="text-align:left;background:#f5f5f5;padding:10px;border-radius:4px;margin:10px 0;font-size:11px;color:#666;">
+          <p><strong>Dicas:</strong></p>
+          <ul style="margin:5px 0;padding-left:20px;">
+            <li>Verifique se a pasta <code>/data/</code> existe</li>
+            <li>Confirme que os arquivos JSON estão presentes</li>
+            <li>Tente recarregar a página (F5)</li>
+            <li>Abra o console (F12) para mais detalhes</li>
+          </ul>
+        </div>
+        <button onclick="location.reload()" style="padding:8px 16px;background:#2196F3;color:white;border:none;border-radius:4px;cursor:pointer;">🔄 Recarregar Página</button>
+      </div>
+    `;
+    document.getElementById('loading').innerHTML = errorHTML;
   }
 }
 
