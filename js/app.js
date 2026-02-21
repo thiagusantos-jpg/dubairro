@@ -131,13 +131,26 @@ async function loadData() {
     }
   }
 
+  // Tentar estratégia final: dados embarcados
+  if (window.EMBEDDED_DATA) {
+    try {
+      console.log('📂 Estratégia: Dados embarcados no JavaScript');
+      Object.assign(DATA, window.EMBEDDED_DATA);
+      console.log('✅ Sucesso: Dados embarcados carregados');
+      return DATA;
+    } catch (error) {
+      console.warn('⚠️ Falha em dados embarcados:', error.message);
+    }
+  }
+
   // Se nenhuma estratégia funcionou
   throw new Error(
-    '❌ Não foi possível carregar os dados.\n\n' +
-    'Opções:\n' +
-    '1. Se está no Vercel: instale @vercel/node com "npm install"\n' +
-    '2. Se está em localhost: certifique-se que /data/ tem os arquivos JSON\n' +
-    '3. Abra F12 (DevTools) para ver logs detalhados'
+    '❌ Não foi possível carregar os dados de nenhuma fonte.\n\n' +
+    'Por favor:\n' +
+    '1. Verifique se js/embedded-data.js foi gerado\n' +
+    '2. Abra F12 (DevTools → Console) para ver logs\n' +
+    '3. Recarregue a página (Ctrl+F5)\n\n' +
+    'Estratégias tentadas: API, /data/, ./data/, embedded'
   );
 }
 
