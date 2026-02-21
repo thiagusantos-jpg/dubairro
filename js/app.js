@@ -82,24 +82,63 @@ function margemColor(md) {
 // ============================================================
 async function loadData() {
   const files = ['vendas_mensais', 'vendas_diarias', 'produtos', 'calendario', 'yoy', 'erosao'];
-  const promises = files.map(f =>
-    fetch(`/data/${f}.json`)
-      .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
-        return r.json();
-      })
-      .catch(err => {
-        console.error(`Erro ao carregar ${f}.json:`, err);
-        throw new Error(`Falha ao carregar ${f}.json: ${err.message}`);
-      })
-  );
+  const DATA = {};
 
-  try {
-    const results = await Promise.all(promises);
-    files.forEach((f, i) => DATA[f] = results[i]);
-  } catch (error) {
-    throw new Error(`Erro ao carregar dados: ${error.message}`);
+  // Múltiplas estratégias de carregamento (em ordem de preferência)
+  const strategies = [
+    {
+      name: 'API (Vercel serverless)',
+      load: (f) => fetch(`/api/data?file=${f}`).then(r => r.json())
+    },
+    {
+      name: 'Arquivo estático /data/',
+      load: (f) => fetch(`/data/${f}.json`).then(r => r.json())
+    },
+    {
+      name: 'Arquivo relativo ./data/',
+      load: (f) => fetch(`./data/${f}.json`).then(r => r.json())
+    }
+  ];
+
+  for (const strategy of strategies) {
+    try {
+      console.log(`📂 Estratégia: ${strategy.name}`);
+
+      const promises = files.map(f =>
+        strategy.load(f)
+          .then(r => {
+            // Validação básica de dados
+            if (!Array.isArray(r) && typeof r !== 'object') {
+              throw new Error(`Dados inválidos: ${f} não é objeto/array`);
+            }
+            return r;
+          })
+          .catch(err => {
+            console.error(`  ❌ ${f}:`, err.message);
+            throw err;
+          })
+      );
+
+      const results = await Promise.all(promises);
+      files.forEach((f, i) => DATA[f] = results[i]);
+
+      console.log(`✅ Sucesso: ${strategy.name}`);
+      return DATA;
+
+    } catch (error) {
+      console.warn(`⚠️ Falha em ${strategy.name}:`, error.message);
+      continue;
+    }
   }
+
+  // Se nenhuma estratégia funcionou
+  throw new Error(
+    '❌ Não foi possível carregar os dados.\n\n' +
+    'Opções:\n' +
+    '1. Se está no Vercel: instale @vercel/node com "npm install"\n' +
+    '2. Se está em localhost: certifique-se que /data/ tem os arquivos JSON\n' +
+    '3. Abra F12 (DevTools) para ver logs detalhados'
+  );
 }
 
 // ============================================================

@@ -1,8 +1,12 @@
 {
-  "buildCommand": "npm run build || echo 'No build command'",
+  "buildCommand": "echo 'Build skipped for static site'",
   "outputDirectory": ".",
-  "framework": "static",
   "public": true,
+  "functions": {
+    "api/data.js": {
+      "maxDuration": 30
+    }
+  },
   "headers": [
     {
       "source": "/data/:file",
@@ -12,8 +16,25 @@
           "value": "application/json"
         },
         {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
           "key": "Cache-Control",
           "value": "public, max-age=3600"
+        }
+      ]
+    },
+    {
+      "source": "/api/:path",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Content-Type",
+          "value": "application/json"
         }
       ]
     },
@@ -29,14 +50,18 @@
   ],
   "routes": [
     {
+      "src": "/api/(.*)",
+      "dest": "/api/$1.js",
+      "methods": ["GET", "POST", "OPTIONS"]
+    },
+    {
       "src": "/data/(.*)\\.json$",
       "dest": "/data/$1.json",
       "methods": ["GET"]
     },
     {
-      "src": "/(?!data/).*",
-      "dest": "/index.html",
-      "methods": ["GET"]
+      "src": "/(?!api/)(?!data/).*",
+      "dest": "/index.html"
     }
   ],
   "cleanUrls": false,

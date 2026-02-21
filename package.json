@@ -1,0 +1,14 @@
+{
+  "name": "mercado-dubairro",
+  "version": "2.0.0",
+  "description": "Dashboard de Gestão para Mercado duBairro",
+  "main": "index.html",
+  "scripts": {
+    "dev": "npx http-server . -p 8000",
+    "start": "npx http-server . -p 8000"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "author": "Mercado duBairro",
+  "license": "MIT"
+}
