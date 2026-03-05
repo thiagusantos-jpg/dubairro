@@ -1,29 +1,8 @@
 {
-  "buildCommand": "echo 'Static site - no build needed'",
+  "buildCommand": "echo 'Static site'",
   "outputDirectory": ".",
   "framework": null,
   "public": true,
-  "headers": [
-    {
-      "source": "/data/(.*).json",
-      "headers": [
-        {
-          "key": "Content-Type",
-          "value": "application/json"
-        },
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=3600"
-        }
-      ]
-    }
-  ],
-  "rewrites": [
-    {
-      "source": "/((?!data/|js/|css/|.*\\.).*)",
-      "destination": "/index.html"
-    }
-  ],
   "cleanUrls": false,
   "trailingSlash": false
 }
