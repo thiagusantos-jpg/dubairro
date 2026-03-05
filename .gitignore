@@ -51,3 +51,8 @@ dados_importados/
 # Logs
 *.log
 logs/
+
+# Security - extra protection
+*.key
+*.pem
+credentials*.json
