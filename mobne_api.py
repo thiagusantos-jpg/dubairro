@@ -21,12 +21,13 @@ MOBNE_API_BASE_URL = os.getenv("MOBNE_API_URL", "https://apiexternal.mobne.com.b
 MOBNE_API_TIMEOUT = 30  # segundos
 MOBNE_API_KEY = os.getenv("MOBNE_API_KEY", "")
 MOBNE_CNPJ = os.getenv("MOBNE_CNPJ", "")
+MOBNE_EMPRESA_ID = os.getenv("MOBNE_EMPRESA_ID", "218")
 
 
 class MobneAPIClient:
     """Cliente para comunicação com API Mobne"""
 
-    def __init__(self, api_key: str = None, cnpj: str = None, base_url: str = None):
+    def __init__(self, api_key: str = None, cnpj: str = None, base_url: str = None, empresa_id: str = None):
         """
         Inicializa o cliente da API Mobne
 
@@ -34,20 +35,23 @@ class MobneAPIClient:
             api_key: Chave de autenticação da API
             cnpj: CNPJ da empresa no Mobne
             base_url: URL base da API (padrão: https://apiexternal.mobne.com.br)
+            empresa_id: ID da empresa no Mobne (padrão: 218)
         """
         self.api_key = api_key or MOBNE_API_KEY
         self.cnpj = cnpj or MOBNE_CNPJ
+        self.empresa_id = empresa_id or MOBNE_EMPRESA_ID
         self.base_url = base_url or MOBNE_API_BASE_URL
         self.session = requests.Session()
         self._setup_headers()
         self.last_sync = None
 
     def _setup_headers(self) -> None:
-        """Configura headers de autenticação"""
+        """Configura headers de autenticação conforme especificação Mobne"""
         self.session.headers.update({
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"ApiKey {self.api_key}",
             "Content-Type": "application/json",
-            "X-CNPJ": self.cnpj,
+            "empresaId": self.empresa_id,
+            "Accept": "application/json",
             "User-Agent": "Mercado-duBairro/1.0"
         })
 
@@ -101,20 +105,20 @@ class MobneAPIClient:
         else:
             return False, f"❌ Erro ao conectar: {response.get('error')}"
 
-    def fetch_produtos(self, limit: int = 1000, offset: int = 0) -> Tuple[bool, List[Dict]]:
+    def fetch_produtos(self, page_size: int = 100, page_number: int = 1) -> Tuple[bool, List[Dict]]:
         """
         Busca lista de produtos do Mobne
 
         Args:
-            limit: Quantidade de produtos por página
-            offset: Offset para paginação
+            page_size: Quantidade de produtos por página (máximo 100)
+            page_number: Número da página (começando em 1)
 
         Returns:
             Tupla (sucesso, lista de produtos)
         """
         success, response = self._make_request(
             "GET",
-            f"/api/v1/produtos?limit={limit}&offset={offset}"
+            f"/api/v1/Produto/consulta-cadastro-produto?PageSize={page_size}&PageNumber={page_number}"
         )
 
         if success:
@@ -124,20 +128,20 @@ class MobneAPIClient:
         else:
             return False, []
 
-    def fetch_clientes(self, limit: int = 1000, offset: int = 0) -> Tuple[bool, List[Dict]]:
+    def fetch_clientes(self, page_size: int = 100, page_number: int = 1) -> Tuple[bool, List[Dict]]:
         """
         Busca lista de clientes do Mobne
 
         Args:
-            limit: Quantidade de clientes por página
-            offset: Offset para paginação
+            page_size: Quantidade de clientes por página (máximo 100)
+            page_number: Número da página (começando em 1)
 
         Returns:
             Tupla (sucesso, lista de clientes)
         """
         success, response = self._make_request(
             "GET",
-            f"/api/v1/clientes?limit={limit}&offset={offset}"
+            f"/api/v1/Cliente/consulta-cadastro-cliente?PageSize={page_size}&PageNumber={page_number}"
         )
 
         if success:
