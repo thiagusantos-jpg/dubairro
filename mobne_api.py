@@ -141,11 +141,11 @@ class MobneAPIClient:
         """
         success, response = self._make_request(
             "GET",
-            f"/api/v1/Cliente/consulta-cadastro-cliente?PageSize={page_size}&PageNumber={page_number}"
+            f"/api/v1/Pessoa/consulta-cadastro-pessoa?Filter.Tipo=C&PageSize={page_size}&PageNumber={page_number}"
         )
 
         if success:
-            clients = response.get("data", [])
+            clients = response.get("Data", {}).get("Items", [])
             logger.info(f"Buscados {len(clients)} clientes do Mobne")
             return True, clients
         else:
@@ -155,17 +155,17 @@ class MobneAPIClient:
         self,
         data_inicio: datetime = None,
         data_fim: datetime = None,
-        limit: int = 1000,
+        limit: int = 100,
         offset: int = 0
     ) -> Tuple[bool, List[Dict]]:
         """
-        Busca vendas do Mobne dentro de um período
+        Busca vendas (pedidos) do Mobne dentro de um período
 
         Args:
             data_inicio: Data de início (padrão: últimos 30 dias)
             data_fim: Data de fim (padrão: hoje)
-            limit: Quantidade por página
-            offset: Offset para paginação
+            limit: Quantidade por página (máximo 100)
+            offset: Número da página
 
         Returns:
             Tupla (sucesso, lista de vendas)
@@ -175,18 +175,24 @@ class MobneAPIClient:
         if data_inicio is None:
             data_inicio = data_fim - timedelta(days=30)
 
-        params = {
-            "data_inicio": data_inicio.strftime("%Y-%m-%d"),
-            "data_fim": data_fim.strftime("%Y-%m-%d"),
-            "limit": limit,
-            "offset": offset
-        }
+        # Formatar datas para ISO 8601 com hora
+        data_inicio_str = data_inicio.strftime("%Y-%m-%dT00:00:00.000")
+        data_fim_str = data_fim.strftime("%Y-%m-%dT23:59:59.999")
 
-        query_string = "&".join(f"{k}={v}" for k, v in params.items())
-        success, response = self._make_request("GET", f"/api/v1/vendas?{query_string}")
+        # Usar endpoint correto de Pedidos de Venda
+        endpoint = (
+            f"/api/v1/PedidoVenda/consulta-pedido-venda"
+            f"?Filter.DataEmissaoDe={data_inicio_str}"
+            f"&Filter.DataEmissaoAte={data_fim_str}"
+            f"&Filter.Situacao=F"
+            f"&PageSize={limit}"
+            f"&PageNumber={offset + 1}"
+        )
+
+        success, response = self._make_request("GET", endpoint)
 
         if success:
-            vendas = response.get("data", [])
+            vendas = response.get("Data", {}).get("Items", [])
             logger.info(f"Buscadas {len(vendas)} vendas do Mobne")
             return True, vendas
         else:
