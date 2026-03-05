@@ -98,12 +98,12 @@ class MobneAPIClient:
         Returns:
             Tupla (sucesso, mensagem)
         """
-        success, response = self._make_request("GET", "/api/v1/health")
+        success, response = self._make_request("GET", "/api/v1/Produto/consulta-cadastro-produto?PageSize=1&PageNumber=1")
 
         if success:
             return True, "✅ Conectado com sucesso ao Mobne"
         else:
-            return False, f"❌ Erro ao conectar: {response.get('error')}"
+            return False, f"❌ Erro ao conectar: {response.get('error', 'Erro desconhecido')}"
 
     def fetch_produtos(self, page_size: int = 100, page_number: int = 1) -> Tuple[bool, List[Dict]]:
         """
