@@ -51,9 +51,8 @@ dados_importados/
 # Logs
 *.log
 logs/
-.env
-.env.local
-.env.*.local
+
+# Security - extra protection
 *.key
 *.pem
 credentials*.json
