@@ -1,7 +1,7 @@
 {
   "buildCommand": "npm run build || echo 'No build command'",
   "outputDirectory": ".",
-  "framework": "static",
+  "framework": null,
   "public": true,
   "headers": [
     {
