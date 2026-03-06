@@ -1,7 +1,12 @@
 {
   "outputDirectory": "public",
-  "framework": null,
+  "framework": "python",
   "public": true,
   "cleanUrls": true,
-  "trailingSlash": false
+  "trailingSlash": false,
+  "functions": {
+    "wsgi.py": {
+      "runtime": "python3.14"
+    }
+  }
 }
