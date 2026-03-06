@@ -3,10 +3,5 @@
   "framework": "python",
   "public": true,
   "cleanUrls": true,
-  "trailingSlash": false,
-  "functions": {
-    "wsgi.py": {
-      "runtime": "python3.14"
-    }
-  }
+  "trailingSlash": false
 }
