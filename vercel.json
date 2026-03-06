@@ -1,5 +1,5 @@
 {
-  "buildCommand": "echo 'Static site'",
+  "buildCommand": "echo 'Streamlit app'",
   "outputDirectory": "public",
   "framework": null,
   "public": true,
