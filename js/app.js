@@ -22,6 +22,11 @@ let DATA = {};
 let CUSTO_FIXO = CUSTO_FIXO_DEFAULT;
 let currentPage = 'resumo';
 
+// Month selector state
+let SELECTED_MES = null;      // Mês selecionado (1-12)
+let SELECTED_ANO = 2026;      // Ano selecionado
+let AVAILABLE_MESES = {};     // Mapa de períodos disponíveis: "2025_1", "2026_1", etc
+
 // ============================================================
 // HELPERS
 // ============================================================
