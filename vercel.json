@@ -1,8 +1,6 @@
 {
-  "buildCommand": "echo 'Static site'",
   "outputDirectory": "public",
-  "framework": null,
   "public": true,
-  "cleanUrls": false,
+  "cleanUrls": true,
   "trailingSlash": false
 }

@@ -973,49 +973,63 @@ function createDataTable(data) {
 function processAndSaveData() {
   const btn = document.querySelector('.btn-import');
   btn.disabled = true;
-  btn.textContent = '⏳ Processando...';
+  btn.textContent = '⏳ Enviando para servidor...';
 
-  setTimeout(() => {
-    try {
-      let processedData = uploadedData;
+  // Obter o arquivo novamente do input
+  const fileInput = document.getElementById('excel-file');
+  const file = fileInput.files[0];
 
-      // Normalizar nomes de colunas
-      processedData = processedData.map(row => {
-        const newRow = {};
-        Object.keys(row).forEach(key => {
-          newRow[key.toUpperCase().trim()] = row[key];
-        });
-        return newRow;
+  if (!file) {
+    showError('❌ Arquivo não encontrado');
+    btn.disabled = false;
+    btn.textContent = '✅ Processar e Salvar Dados';
+    return;
+  }
+
+  // Criar FormData com o arquivo
+  const formData = new FormData();
+  formData.append('file', file);
+
+  // Fazer POST para /api/upload
+  fetch('/api/upload', {
+    method: 'POST',
+    body: formData
+  })
+  .then(response => {
+    if (!response.ok) {
+      return response.json().then(data => {
+        throw new Error(data.detail || `Erro HTTP ${response.status}`);
       });
-
-      // Salvar no localStorage (simulando o backend)
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const key = `data_upload_${detectedFormat}_${timestamp}`;
-      localStorage.setItem(key, JSON.stringify(processedData));
-
-      // Atualizar último upload
-      document.getElementById('last-upload').textContent = `✅ ${detectedFormat.toUpperCase()} - ${new Date().toLocaleString('pt-BR')}`;
-
-      // Mostrar resultado
-      document.getElementById('preview-container').style.display = 'none';
-      document.getElementById('result-container').style.display = 'block';
-      document.getElementById('result-message').innerHTML = `
-        <div style="padding:15px;background:#c8e6c9;border-radius:4px;border-left:4px solid #2e7d32;">
-          <h3 style="color:#2e7d32;margin:0 0 10px 0;">✅ Dados salvos com sucesso!</h3>
-          <div style="color:#1b5e20;">
-            <p><strong>Tipo:</strong> ${detectedFormat.toUpperCase()}</p>
-            <p><strong>Linhas:</strong> ${uploadedData.length}</p>
-            <p><strong>Armazenado em:</strong> localStorage (${key})</p>
-          </div>
-        </div>
-      `;
-    } catch (err) {
-      showError(`❌ Erro ao processar: ${err.message}`);
     }
+    return response.json();
+  })
+  .then(data => {
+    // Atualizar último upload
+    document.getElementById('last-upload').textContent = `✅ ${data.format.toUpperCase()} - ${new Date().toLocaleString('pt-BR')}`;
+
+    // Mostrar resultado
+    document.getElementById('preview-container').style.display = 'none';
+    document.getElementById('result-container').style.display = 'block';
+    document.getElementById('result-message').innerHTML = `
+      <div style="padding:15px;background:#c8e6c9;border-radius:4px;border-left:4px solid #2e7d32;">
+        <h3 style="color:#2e7d32;margin:0 0 10px 0;">✅ ${data.message}</h3>
+        <div style="color:#1b5e20;">
+          <p><strong>Tipo:</strong> ${data.format.toUpperCase()}</p>
+          <p><strong>Linhas processadas:</strong> ${data.rows_processed}</p>
+          <p><strong>Período:</strong> ${String(data.mes).padStart(2, '0')}/${data.ano}</p>
+          <p><strong>Arquivo salvo:</strong> ${data.filepath}</p>
+        </div>
+      </div>
+    `;
 
     btn.disabled = false;
     btn.textContent = '✅ Processar e Salvar Dados';
-  }, 500);
+  })
+  .catch(err => {
+    showError(`❌ Erro ao enviar arquivo: ${err.message}`);
+    btn.disabled = false;
+    btn.textContent = '✅ Processar e Salvar Dados';
+  });
 }
 
 function resetUpload() {
