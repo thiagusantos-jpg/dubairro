@@ -1,8 +1,8 @@
 {
-  "buildCommand": "echo 'Streamlit app'",
+  "buildCommand": "pip install -r requirements.txt",
   "outputDirectory": "public",
   "framework": null,
   "public": true,
-  "cleanUrls": false,
+  "cleanUrls": true,
   "trailingSlash": false
 }

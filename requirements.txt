@@ -9,6 +9,10 @@ numpy>=1.24.0
 requests>=2.31.0
 python-dotenv>=1.0.0
 
+# FastAPI para endpoints (Vercel Serverless)
+fastapi>=0.104.0
+python-multipart>=0.0.6
+
 # Opcional: Para sincronização assíncrona
 aiohttp>=3.9.0
 APScheduler>=3.10.0
