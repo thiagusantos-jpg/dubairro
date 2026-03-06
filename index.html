@@ -44,6 +44,15 @@
         <div id="sim-badge" class="sim-badge" style="display:none;"></div>
 
         <hr>
+        <div class="sidebar-section-title">📅 Seletor de Período</div>
+        <div id="year-tabs" class="period-tabs">
+          <button class="tab-btn-period active" data-year="2026" onclick="selectMes(SELECTED_MES, 2026)">2026</button>
+          <button class="tab-btn-period" data-year="2025" onclick="selectMes(SELECTED_MES, 2025)">2025</button>
+        </div>
+        <div id="month-buttons" class="month-grid"></div>
+        <div id="period-status" class="period-status"></div>
+
+        <hr>
         <div class="sidebar-section-title">⚙️ Informações</div>
         <div class="sidebar-info"><strong>Custo Fixo:</strong> <span id="info-custo">R$ 16.913,46</span></div>
         <div class="sidebar-info"><strong>Meta Líquida:</strong> 15%</div>
