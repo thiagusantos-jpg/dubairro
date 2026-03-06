@@ -25,9 +25,8 @@ ENV/
 *.jpg
 *.jpeg
 
-# Local data directories
+# Local data directories (but keep /public/data for static JSON files)
 dados_importados/
-data/
 
 # Environment files
 .env
