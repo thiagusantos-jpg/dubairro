@@ -1,6 +1,5 @@
 {
   "outputDirectory": "public",
-  "framework": "python",
   "public": true,
   "cleanUrls": true,
   "trailingSlash": false
