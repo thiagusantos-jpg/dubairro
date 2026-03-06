@@ -26,6 +26,21 @@ except ImportError:
     MobneAPIClient = None
     MOBNE_AVAILABLE = False
 
+try:
+    from analises import (
+        carregar_configuracoes,
+        salvar_configuracoes,
+        obter_status_sincronizacao,
+        sincronizacao_completa,
+        analises_periodo,
+    )
+except ImportError:
+    carregar_configuracoes = None
+    salvar_configuracoes = None
+    obter_status_sincronizacao = None
+    sincronizacao_completa = None
+    analises_periodo = None
+
 # ============================================================
 # APP
 # ============================================================
@@ -267,6 +282,162 @@ async def listar_empresas():
 
 
 # ============================================================
+# DASHBOARD — STATUS DE SINCRONIZAÇÃO
+# ============================================================
+
+@app.get("/api/dashboard/status/sync")
+async def dashboard_status_sync():
+    """
+    Retorna o status completo da sincronização de todos os dados
+
+    Response:
+    {
+        "sincronizacao_completa": true/false,
+        "todos_dados_sincronizados": true/false,
+        "detalhes": {
+            "produtos": {"ultima_sync": "...", "total": 123},
+            "clientes": {...},
+            "vendas": {...}
+        }
+    }
+    """
+    if not obter_status_sincronizacao:
+        return JSONResponse({"error": "Módulo de análises não disponível"}, status_code=503)
+
+    status = obter_status_sincronizacao()
+    completo = sincronizacao_completa()
+
+    return JSONResponse({
+        "sincronizacao_completa": completo,
+        "todos_dados_sincronizados": completo,
+        "detalhes": {
+            "produtos": status.get("produtos"),
+            "clientes": status.get("clientes"),
+            "vendas": status.get("vendas"),
+        },
+        "timestamp": status.get("timestamp"),
+    })
+
+
+# ============================================================
+# DASHBOARD — ANÁLISES POR PERÍODO
+# ============================================================
+
+@app.get("/api/dashboard/analises/periodo")
+async def dashboard_analises_periodo(
+    mes: int = Query(None, ge=1, le=12, description="Mês (1-12)"),
+    ano: int = Query(None, ge=2000, le=2100, description="Ano"),
+):
+    """
+    Retorna análises completas para um período específico
+
+    Query Parameters:
+    - mes: 1-12 (obrigatório)
+    - ano: 2000-2100 (obrigatório)
+
+    Response inclui:
+    - Métricas: total vendas, valor, ticket médio
+    - Comparativo: vs. mês anterior (variação %)
+    - Gráficos: vendas por dia, faturamento por dia
+    - Financeiro: lucro bruto, lucro líquido, ponto de equilíbrio
+    """
+    if not analises_periodo:
+        return JSONResponse({"error": "Módulo de análises não disponível"}, status_code=503)
+
+    if mes is None or ano is None:
+        return JSONResponse(
+            {"error": "Parâmetros obrigatórios: mes (1-12) e ano"},
+            status_code=400,
+        )
+
+    result = analises_periodo(mes, ano)
+
+    if "error" in result:
+        return JSONResponse(result, status_code=400)
+
+    return JSONResponse(result)
+
+
+# ============================================================
+# DASHBOARD — CONFIGURAÇÕES
+# ============================================================
+
+@app.get("/api/dashboard/configuracoes")
+async def get_configuracoes():
+    """
+    Retorna as configurações atuais do dashboard
+
+    Response:
+    {
+        "custo_fixo_mensal": 16913.46,
+        "margem_meta": 15.0,
+        "faturamento_meta": 100000.0,
+        "custos_detalhes": {...},
+        "data_atualizacao": "..."
+    }
+    """
+    if not carregar_configuracoes:
+        return JSONResponse({"error": "Módulo de análises não disponível"}, status_code=503)
+
+    config = carregar_configuracoes()
+    return JSONResponse(config)
+
+
+@app.post("/api/dashboard/configuracoes")
+async def post_configuracoes(body: dict):
+    """
+    Atualiza as configurações do dashboard
+
+    Body esperado:
+    {
+        "custo_fixo_mensal": 16913.46,
+        "margem_meta": 15.0,
+        "faturamento_meta": 100000.0,
+        "custos_detalhes": {
+            "aluguel": 0.0,
+            "salarios": 0.0,
+            "utilidades": 0.0,
+            "manutencao": 0.0
+        }
+    }
+    """
+    if not salvar_configuracoes:
+        return JSONResponse({"error": "Módulo de análises não disponível"}, status_code=503)
+
+    if not body:
+        return JSONResponse({"error": "Body vazio"}, status_code=400)
+
+    # Validação básica
+    if "custo_fixo_mensal" in body:
+        if not isinstance(body["custo_fixo_mensal"], (int, float)):
+            return JSONResponse({"error": "custo_fixo_mensal deve ser um número"}, status_code=400)
+
+    if "margem_meta" in body:
+        margem = body["margem_meta"]
+        if not isinstance(margem, (int, float)) or not (0 <= margem <= 100):
+            return JSONResponse(
+                {"error": "margem_meta deve estar entre 0 e 100"},
+                status_code=400,
+            )
+
+    # Salvar
+    config = carregar_configuracoes()
+    config.update(body)
+
+    if salvar_configuracoes(config):
+        return JSONResponse({
+            "status": "success",
+            "message": "Configurações atualizadas",
+            "config": config,
+        })
+    else:
+        return JSONResponse(
+            {"error": "Erro ao salvar configurações"},
+            status_code=500,
+        )
+
+
+# ============================================================
 # ROOT
 # ============================================================
 
@@ -274,14 +445,22 @@ async def listar_empresas():
 async def root():
     return JSONResponse({
         "name": "DuBairro API",
-        "version": "1.1.0",
+        "version": "1.2.0",
         "status": "ok",
         "endpoints": {
             "health": "GET /api/health",
             "upload": "POST /api/upload",
-            "mobne_status": "GET /api/mobne/status",
-            "mobne_sync": "POST /api/mobne/sync?action=all|produtos|clientes|vendas&empresa_id=218&force=false",
-            "mobne_cache": "DELETE /api/mobne/cache",
-            "mobne_empresas": "GET /api/mobne/empresas",
+            "mobne": {
+                "status": "GET /api/mobne/status",
+                "sync": "POST /api/mobne/sync?action=all|produtos|clientes|vendas",
+                "cache": "DELETE /api/mobne/cache",
+                "empresas": "GET /api/mobne/empresas",
+            },
+            "dashboard": {
+                "status_sync": "GET /api/dashboard/status/sync",
+                "analises_periodo": "GET /api/dashboard/analises/periodo?mes=1&ano=2026",
+                "configuracoes_get": "GET /api/dashboard/configuracoes",
+                "configuracoes_post": "POST /api/dashboard/configuracoes",
+            },
         },
     })
