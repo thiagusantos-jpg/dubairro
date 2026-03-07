@@ -27,9 +27,8 @@ let SELECTED_MES = null;      // Mês selecionado (1-12)
 let SELECTED_ANO = 2026;      // Ano selecionado
 let AVAILABLE_MESES = {};     // Mapa de períodos disponíveis
 
-// Data source state
-let DATA_SOURCE = 'api';      // 'api' ou 'excel'
-let IS_LOADING = false;       // Flag para indicar carregamento em progresso
+// Loading state
+let IS_LOADING = false;
 
 // ============================================================
 // HELPERS
@@ -54,36 +53,6 @@ function getSelectedMes() {
 }
 
 // ============================================================
-// DATA SOURCE CONTROL
-// ============================================================
-function setDataSource(source) {
-  if (source !== 'api' && source !== 'excel') return;
-
-  DATA_SOURCE = source;
-  localStorage.setItem('dubairro_data_source', source);
-
-  // Update buttons
-  document.getElementById('btn-api').classList.toggle('active', source === 'api');
-  document.getElementById('btn-excel').classList.toggle('active', source === 'excel');
-
-  // Reload current data
-  selectMes(SELECTED_MES, SELECTED_ANO);
-}
-
-function restoreDataSource() {
-  const saved = localStorage.getItem('dubairro_data_source');
-  if (saved && (saved === 'api' || saved === 'excel')) {
-    DATA_SOURCE = saved;
-  }
-  updateDataSourceUI();
-}
-
-function updateDataSourceUI() {
-  document.getElementById('btn-api').classList.toggle('active', DATA_SOURCE === 'api');
-  document.getElementById('btn-excel').classList.toggle('active', DATA_SOURCE === 'excel');
-}
-
-// ============================================================
 // LOADING INDICATOR
 // ============================================================
 function showLoadingStatus(message = 'Carregando dados...') {
@@ -103,69 +72,19 @@ function hideLoadingStatus() {
   }
 }
 
-// Cache para dados de vendas mensais carregados da API
-const VENDAS_CACHE = {};
-
-async function getVendasMensais(mes, ano) {
-  const cacheKey = `${ano}_${mes}`;
-
-  // Se já está em cache, retorna
-  if (VENDAS_CACHE[cacheKey]) {
-    return VENDAS_CACHE[cacheKey];
-  }
-
-  // Priorizar API se DATA_SOURCE for 'api'
-  if (DATA_SOURCE === 'api') {
-    try {
-      const apiData = await loadVendasMensaisFromAPI(mes, ano);
-      if (apiData && apiData.length > 0) {
-        VENDAS_CACHE[cacheKey] = apiData;
-        return apiData;
-      }
-    } catch (error) {
-      console.warn(`Erro ao carregar API para ${mes}/${ano}:`, error);
-    }
-  }
-
-  // Fallback para dados estáticos (Excel)
-  if (DATA.vendas_mensais && DATA.vendas_mensais.length > 0) {
-    const filtered = DATA.vendas_mensais.filter(row => {
-      // Suportar ambos os formatos: Excel (Periodo) e API (Data)
-      if (row.Periodo) {
-        const [m, y] = row.Periodo.split('/');
-        return parseInt(m) === mes && parseInt(y) === ano;
-      } else if (row.Data) {
-        const dateParts = row.Data.split('-');
-        const rowAno = parseInt(dateParts[0]);
-        const rowMes = parseInt(dateParts[1]);
-        return rowMes === mes && rowAno === ano;
-      }
-      return false;
-    });
-
-    if (filtered.length > 0) {
-      VENDAS_CACHE[cacheKey] = filtered;
-      return filtered;
-    }
-  }
-
-  console.warn(`⚠️ Nenhum dado encontrado para ${mes}/${ano}`);
-  return [];
+function getVendasMensais(mes, ano) {
+  return filterDataByPeriod(DATA.vendas_mensais || [], mes, ano);
 }
 
 function filterDataByPeriod(data, mes, ano) {
+  if (!data || !data.length) return [];
   return data.filter(row => {
-    // Detectar qual formato os dados estão
+    if (row.Mes !== undefined && row.Ano !== undefined) {
+      return row.Mes === mes && row.Ano === ano;
+    }
     if (row.Periodo) {
-      // Formato Excel: "01/2026"
       const [m, y] = row.Periodo.split('/');
       return parseInt(m) === mes && parseInt(y) === ano;
-    } else if (row.Data) {
-      // Formato API: "2026-02-15"
-      const dateParts = row.Data.split('-');
-      const rowAno = parseInt(dateParts[0]);
-      const rowMes = parseInt(dateParts[1]);
-      return rowMes === mes && rowAno === ano;
     }
     return false;
   });
@@ -180,8 +99,8 @@ function detectAvailablePeriods() {
     DATA.yoy.forEach(row => {
       // Marcar 2025 se tem dados
       if (row.Receita_2025 > 0) AVAILABLE_MESES[`2025_${row.Mes_Num}`] = true;
-      // Marcar 2026 sempre (com dados reais ou teste)
-      AVAILABLE_MESES[`2026_${row.Mes_Num}`] = true;
+      // Marcar 2026 se tem dados
+      if (row.Receita_2026 > 0) AVAILABLE_MESES[`2026_${row.Mes_Num}`] = true;
     });
   }
 
@@ -209,10 +128,7 @@ function detectAvailablePeriods() {
   }
 }
 
-async function selectMes(mes, ano) {
-  // Permitir clicar em qualquer mês (mesmo que inativo)
-  // A API retornará dados de teste se não houver dados reais
-
+function selectMes(mes, ano) {
   SELECTED_MES = mes;
   SELECTED_ANO = ano;
 
@@ -222,26 +138,25 @@ async function selectMes(mes, ano) {
     timestamp: Date.now()
   }));
 
-  // Mostrar indicador de carregamento se usar API
-  if (DATA_SOURCE === 'api') {
-    showLoadingStatus(`Carregando dados de ${MESES_NOMES[mes]}/...`);
-  }
-
-  // Tenta carregar dados para este período
-  try {
-    const vendas = await getVendasMensais(mes, ano);
-    if (vendas && vendas.length > 0) {
-      DATA.vendas_mensais = vendas;
-    }
-  } catch (err) {
-    console.warn("Erro ao carregar dados:", err);
-  } finally {
-    hideLoadingStatus();
-  }
-
   renderMonthSelector();
   updateYearTabs();
+  updateSyncStatus();
   navigate(currentPage);
+}
+
+function updateSyncStatus() {
+  const statusEl = document.getElementById('sync-status');
+  if (!statusEl) return;
+
+  const vm = filterDataByPeriod(DATA.vendas_mensais || [], SELECTED_MES, SELECTED_ANO);
+  const mesNome = MESES_NOMES[SELECTED_MES] || '';
+
+  if (vm.length > 0) {
+    const receita = vm.reduce((s, r) => s + (r.Vlr_Venda || 0), 0);
+    statusEl.innerHTML = `<span style="color: #27AE60;">✅ ${mesNome}/${SELECTED_ANO}: R$ ${receita.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span>`;
+  } else {
+    statusEl.innerHTML = `<span style="color: #E74C3C;">⚠️ ${mesNome}/${SELECTED_ANO}: sem dados sincronizados</span>`;
+  }
 }
 
 function restoreSelectedPeriod() {
@@ -374,108 +289,18 @@ function restoreUploadedDataFromLocalStorage() {
 // ============================================================
 // DATA LOADING
 // ============================================================
-// CARREGAR DADOS DA API MOBNE (ou estáticos como fallback)
-// ============================================================
-async function loadDataFromAPI() {
-  try {
-    console.log("🔄 Tentando carregar dados da API Mobne...");
-
-    // Buscar dados YoY da API
-    const yoyResponse = await fetch('/api/mobne/yoy?ano_referencia=2026');
-    if (!yoyResponse.ok) {
-      console.warn("⚠️ API YoY indisponível, usando dados estáticos");
-      return null;
-    }
-    const yoyData = await yoyResponse.json();
-    DATA.yoy = yoyData.yoy || yoyData.data || [];
-
-    console.log("✓ Dados YoY carregados da API:", DATA.yoy.length, "meses");
-
-    // Buscar dados de vendas mensais para o período selecionado (será feito sob demanda)
-    return true;
-  } catch (error) {
-    console.warn("⚠️ Erro ao carregar API Mobne:", error.message);
-    return null;
-  }
-}
-
-async function loadVendasMensaisFromAPI(mes, ano) {
-  try {
-    // Sempre tentar carregar da API (prioridade máxima)
-    let response = await fetch(`/api/mobne/vendas-mensais?mes=${mes}&ano=${ano}`);
-
-    if (!response.ok) {
-      console.warn(`⚠️ API indisponível para ${mes}/${ano}`);
-      return null;
-    }
-
-    let data = await response.json();
-
-    // Se não houver dados reais, tentar com dados de teste (sempre com use_mock=true para garantir dados)
-    if (!data.vendas_mensais || data.vendas_mensais.length === 0) {
-      console.log(`📊 Nenhum dado real para ${mes}/${ano}, solicitando dados de teste da API...`);
-      response = await fetch(`/api/mobne/vendas-mensais?mes=${mes}&ano=${ano}&use_mock=true`);
-
-      if (!response.ok) {
-        console.warn(`⚠️ API não conseguiu gerar dados de teste para ${mes}/${ano}`);
-        return null;
-      }
-
-      data = await response.json();
-
-      if (data.vendas_mensais && data.vendas_mensais.length > 0) {
-        console.log(`✓ Dados de teste carregados (${data.vendas_mensais.length} itens)`);
-        // Marcar que está usando dados de teste
-        window.USING_MOCK_DATA = true;
-      } else {
-        console.warn(`⚠️ Nenhum dado retornado da API (mesmo com use_mock=true)`);
-        return null;
-      }
-    } else {
-      // Dados reais foram carregados
-      window.USING_MOCK_DATA = false;
-    }
-
-    // Transformar dados da API para formato compatível
-    let vendas = data.vendas_mensais || [];
-    vendas = vendas.map(row => ({
-      ...row,
-      // Adicionar campo Periodo se não existir
-      Periodo: row.Periodo || `${String(ano).slice(-2)}/${mes}`.padStart(2, '0') + '/' + ano,
-      // Garantir que temos os campos esperados
-      Mes: mes,
-      Ano: ano,
-    }));
-
-    return vendas;
-  } catch (error) {
-    console.warn(`⚠️ Erro ao carregar vendas de ${mes}/${ano} da API:`, error.message);
-    return null;
-  }
-}
-
-// ============================================================
 async function loadData() {
-  // Restore data source preference
-  restoreDataSource();
+  showLoadingStatus('Carregando dados do Mobne...');
 
-  // Tentar carregar dados da API Mobne
-  const apiAvailable = await loadDataFromAPI();
-
-  if (!apiAvailable) {
-    // Fallback para dados estáticos
-    console.log("📂 Carregando dados estáticos dos arquivos JSON...");
-    const files = ['vendas_mensais', 'vendas_diarias', 'produtos', 'calendario', 'yoy', 'erosao'];
-    const promises = files.map(f => fetch(`data/${f}.json`).then(r => r.json()));
-    const results = await Promise.all(promises);
-    files.forEach((f, i) => DATA[f] = results[i]);
-  } else {
-    // Carregar outros dados estáticos que não estão na API
-    const files = ['vendas_diarias', 'produtos', 'calendario', 'erosao'];
-    const promises = files.map(f => fetch(`data/${f}.json`).then(r => r.json()));
-    const results = await Promise.all(promises);
-    files.forEach((f, i) => DATA[f] = results[i]);
-  }
+  // Carregar todos os JSONs (gerados por sync_mobne_data.py)
+  const files = ['vendas_mensais', 'vendas_diarias', 'produtos', 'calendario', 'yoy', 'erosao'];
+  const promises = files.map(f =>
+    fetch(`data/${f}.json`)
+      .then(r => r.ok ? r.json() : [])
+      .catch(() => [])
+  );
+  const results = await Promise.all(promises);
+  files.forEach((f, i) => DATA[f] = results[i]);
 
   // Restore any uploaded data from localStorage
   restoreUploadedDataFromLocalStorage();
@@ -485,8 +310,7 @@ async function loadData() {
   restoreSelectedPeriod();
   renderMonthSelector();
 
-  // Update UI with data source info
-  updateDataSourceUI();
+  hideLoadingStatus();
 }
 
 // ============================================================
@@ -518,16 +342,11 @@ function pageResumo() {
   let html = `<h2>📊 Resumo Executivo</h2><p class="page-subtitle">Como foi o mês? Estamos melhor ou pior que antes?</p>`;
   html += periodoBadge(mesNome, 2026) + '<hr class="divider">';
 
-  // Aviso sobre a fonte dos dados
+  // Aviso quando não há dados sincronizados
   if (vm.length === 0) {
-    html += '<div style="background: #ffcdd2; border-left: 4px solid #c62828; padding: 12px; margin-bottom: 20px; border-radius: 4px;">';
-    html += '<strong style="color: #b71c1c;">❌ Sem Dados</strong><br>';
-    html += '<span style="color: #b71c1c; font-size: 12px;">Nenhum dado disponível para ' + mesNome + '/' + SELECTED_ANO + '. Tente mudar a fonte de dados ou selecionar outro período.</span>';
-    html += '</div>';
-  } else if (window.USING_MOCK_DATA) {
     html += '<div style="background: #FFF3CD; border-left: 4px solid #FFC107; padding: 12px; margin-bottom: 20px; border-radius: 4px;">';
-    html += '<strong style="color: #856404;">⚠️ Dados de Teste</strong><br>';
-    html += '<span style="color: #856404; font-size: 12px;">O Mobne ainda não tem vendas para este período. Mostrando dados simulados para demonstração.</span>';
+    html += '<strong style="color: #856404;">⚠️ Sem dados para ' + mesNome + '/' + SELECTED_ANO + '</strong><br>';
+    html += '<span style="color: #856404; font-size: 12px;">Execute <code>python sync_mobne_data.py</code> para sincronizar os dados do Mobne.</span>';
     html += '</div>';
   }
 
@@ -1627,29 +1446,9 @@ function updateCustoFixo() {
 async function init() {
   try {
     await loadData();
-
-    // Carrega dados do mês selecionado se não estiver fazendo já
-    if (SELECTED_MES && DATA.vendas_mensais) {
-      const vm = filterDataByPeriod(DATA.vendas_mensais, SELECTED_MES, SELECTED_ANO);
-      if (vm.length === 0 && DATA_SOURCE === 'api') {
-        // Se não há dados e está usando API, tenta carregar da API
-        console.log(`🔄 Pré-carregando dados da API para ${SELECTED_MES}/${SELECTED_ANO}...`);
-        try {
-          const apiData = await getVendasMensais(SELECTED_MES, SELECTED_ANO);
-          if (apiData && apiData.length > 0) {
-            DATA.vendas_mensais = [...DATA.vendas_mensais.filter(r => {
-              const [m, y] = (r.Periodo || '').split('/');
-              return parseInt(m) !== SELECTED_MES || parseInt(y) !== SELECTED_ANO;
-            }), ...apiData];
-          }
-        } catch (err) {
-          console.warn('Erro ao pré-carregar dados:', err);
-        }
-      }
-    }
-
     document.getElementById('loading').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
+    updateSyncStatus();
     navigate('resumo');
   } catch (e) {
     document.getElementById('loading').innerHTML = `<div style="color:red;text-align:center"><h3>Erro ao carregar dados</h3><p>${e.message}</p></div>`;

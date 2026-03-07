@@ -669,38 +669,16 @@ body {
 }
 
 /* ============================================================
-   DATA SOURCE TOGGLE
+   SYNC STATUS
    ============================================================ */
-.data-source-toggle {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    margin-bottom: 12px;
-}
-
-.source-btn {
-    padding: 8px 12px;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    color: #ccc;
+.sync-status {
     font-size: 12px;
+    color: #ccc;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.05);
     border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.2s;
-    font-weight: 500;
-}
-
-.source-btn:hover {
-    background: rgba(255, 255, 255, 0.15);
-    border-color: var(--yellow);
-    color: white;
-}
-
-.source-btn.active {
-    background: var(--yellow);
-    color: var(--dark);
-    border-color: var(--yellow);
-    font-weight: 600;
+    margin-bottom: 8px;
+    line-height: 1.4;
 }
 
 /* ============================================================
