@@ -37,6 +37,7 @@ try:
         obter_status_sincronizacao,
         sincronizacao_completa,
         analises_periodo,
+        obter_analise_vendas,
     )
 except ImportError:
     carregar_configuracoes = None
@@ -44,6 +45,7 @@ except ImportError:
     obter_status_sincronizacao = None
     sincronizacao_completa = None
     analises_periodo = None
+    obter_analise_vendas = None
 
 # ============================================================
 # APP
@@ -667,6 +669,49 @@ async def dashboard_analises_periodo(
 
 
 # ============================================================
+# ANÁLISE DE VENDAS
+# ============================================================
+
+@app.get("/api/analise-vendas")
+async def analise_vendas(
+    categoria: str = Query(None, description="Filtrar por categoria"),
+    curva: str = Query(None, description="Filtrar por curva (A ou B/C)"),
+):
+    """
+    Retorna dados de Análise de Vendas com Produto, Categoria, Curva ABC, Valor Liquido
+
+    Query Parameters:
+    - categoria: Filtrar por categoria (opcional)
+    - curva: Filtrar por curva A ou B/C (opcional)
+
+    Response:
+    {
+        "status": "success",
+        "total_registros": 150,
+        "total_valor_liquido": 45230.50,
+        "dados": [
+            {
+                "Produto": "BANANA PRATA (KG)",
+                "Categoria": "Frutas",
+                "Curva_ABC": "A",
+                "Valor_Liquido": 953.62
+            },
+            ...
+        ]
+    }
+    """
+    if not obter_analise_vendas:
+        return JSONResponse({"error": "Módulo de análises não disponível"}, status_code=503)
+
+    result = obter_analise_vendas(filtro_categoria=categoria, filtro_curva=curva)
+
+    if result.get("status") == "error":
+        return JSONResponse(result, status_code=500)
+
+    return JSONResponse(result)
+
+
+# ============================================================
 # DASHBOARD — CONFIGURAÇÕES
 # ============================================================
 
@@ -753,11 +798,12 @@ async def post_configuracoes(body: dict):
 async def root():
     return JSONResponse({
         "name": "DuBairro API",
-        "version": "1.2.0",
+        "version": "1.3.0",
         "status": "ok",
         "endpoints": {
             "health": "GET /api/health",
             "upload": "POST /api/upload",
+            "analise_vendas": "GET /api/analise-vendas?categoria=Frutas&curva=A",
             "mobne": {
                 "status": "GET /api/mobne/status",
                 "sync": "POST /api/mobne/sync?action=all|produtos|clientes|vendas",

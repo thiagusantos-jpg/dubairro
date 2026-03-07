@@ -283,3 +283,94 @@ def analises_periodo(mes: int, ano: int) -> dict:
         "total_produtos": len(produtos_todos),
         "timestamp": datetime.now().isoformat(),
     }
+
+
+# ============================================================
+# ANÁLISE DE VENDAS (Para relatório de Análise de Vendas)
+# ============================================================
+
+def obter_analise_vendas(
+    filtro_categoria: Optional[str] = None,
+    filtro_curva: Optional[str] = None,
+) -> dict:
+    """
+    Retorna dados de Análise de Vendas com Produto, Categoria, Curva ABC, Valor Liquido
+
+    Args:
+        filtro_categoria: Filtrar por categoria (opcional)
+        filtro_curva: Filtrar por curva (A ou B/C) (opcional)
+
+    Returns:
+        dict com lista de produtos e totalizações
+    """
+    try:
+        # Carregar dados de produtos
+        caminho_produtos = DATA_DIR / "produtos.json"
+        caminho_categoria_map = DATA_DIR / "categoria_mapping.json"
+
+        produtos_dados = []
+        categoria_map = {}
+
+        # Carregar produtos
+        if caminho_produtos.exists():
+            with open(caminho_produtos) as f:
+                produtos_dados = json.load(f)
+
+        # Carregar mapeamento de categoria
+        if caminho_categoria_map.exists():
+            try:
+                with open(caminho_categoria_map) as f:
+                    categoria_map = json.load(f)
+            except Exception as e:
+                logger.debug(f"Erro ao carregar categoria_mapping.json: {e}")
+
+        # Processar dados
+        analise_dados = []
+        total_valor_liquido = 0.0
+        categorias_unicas = set()
+
+        for produto in produtos_dados:
+            nome_produto = produto.get("Produto", "")
+            curva = produto.get("Curva", "B/C")
+            valor_liquido = produto.get("Lucro_Total", 0)
+            categoria = categoria_map.get(nome_produto, "Outros")
+
+            # Aplicar filtros
+            if filtro_categoria and categoria != filtro_categoria:
+                continue
+            if filtro_curva and curva != filtro_curva:
+                continue
+
+            analise_dados.append({
+                "Produto": nome_produto,
+                "Categoria": categoria,
+                "Curva_ABC": curva,
+                "Valor_Liquido": round(valor_liquido, 2),
+            })
+
+            total_valor_liquido += valor_liquido
+            categorias_unicas.add(categoria)
+
+        # Ordenar por valor líquido (decrescente)
+        analise_dados.sort(key=lambda x: -x["Valor_Liquido"])
+
+        return {
+            "status": "success",
+            "total_registros": len(analise_dados),
+            "total_valor_liquido": round(total_valor_liquido, 2),
+            "categorias_disponiveis": sorted(list(categorias_unicas)),
+            "filtros_aplicados": {
+                "categoria": filtro_categoria,
+                "curva": filtro_curva,
+            },
+            "dados": analise_dados,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    except Exception as e:
+        logger.error(f"Erro ao obter análise de vendas: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "dados": [],
+        }
