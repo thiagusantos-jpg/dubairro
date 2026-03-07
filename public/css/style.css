@@ -651,6 +651,16 @@ body {
     cursor: not-allowed;
 }
 
+.month-btn-empty {
+    opacity: 0.6;
+}
+
+.month-btn-empty:hover {
+    background: var(--yellow);
+    color: var(--dark);
+    opacity: 1;
+}
+
 .period-status {
     font-size: 11px;
     color: #999;
