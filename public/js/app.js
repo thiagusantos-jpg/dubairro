@@ -27,6 +27,10 @@ let SELECTED_MES = null;      // Mês selecionado (1-12)
 let SELECTED_ANO = 2026;      // Ano selecionado
 let AVAILABLE_MESES = {};     // Mapa de períodos disponíveis
 
+// Data source state
+let DATA_SOURCE = 'api';      // 'api' ou 'excel'
+let IS_LOADING = false;       // Flag para indicar carregamento em progresso
+
 // ============================================================
 // HELPERS
 // ============================================================
@@ -49,6 +53,56 @@ function getSelectedMes() {
   return { nome, num: SELECTED_MES, ano: SELECTED_ANO };
 }
 
+// ============================================================
+// DATA SOURCE CONTROL
+// ============================================================
+function setDataSource(source) {
+  if (source !== 'api' && source !== 'excel') return;
+
+  DATA_SOURCE = source;
+  localStorage.setItem('dubairro_data_source', source);
+
+  // Update buttons
+  document.getElementById('btn-api').classList.toggle('active', source === 'api');
+  document.getElementById('btn-excel').classList.toggle('active', source === 'excel');
+
+  // Reload current data
+  selectMes(SELECTED_MES, SELECTED_ANO);
+}
+
+function restoreDataSource() {
+  const saved = localStorage.getItem('dubairro_data_source');
+  if (saved && (saved === 'api' || saved === 'excel')) {
+    DATA_SOURCE = saved;
+  }
+  updateDataSourceUI();
+}
+
+function updateDataSourceUI() {
+  document.getElementById('btn-api').classList.toggle('active', DATA_SOURCE === 'api');
+  document.getElementById('btn-excel').classList.toggle('active', DATA_SOURCE === 'excel');
+}
+
+// ============================================================
+// LOADING INDICATOR
+// ============================================================
+function showLoadingStatus(message = 'Carregando dados...') {
+  IS_LOADING = true;
+  const elem = document.getElementById('loading-status');
+  if (elem) {
+    document.getElementById('loading-text').textContent = message;
+    elem.style.display = 'flex';
+  }
+}
+
+function hideLoadingStatus() {
+  IS_LOADING = false;
+  const elem = document.getElementById('loading-status');
+  if (elem) {
+    elem.style.display = 'none';
+  }
+}
+
 // Cache para dados de vendas mensais carregados da API
 const VENDAS_CACHE = {};
 
@@ -60,21 +114,29 @@ async function getVendasMensais(mes, ano) {
     return VENDAS_CACHE[cacheKey];
   }
 
-  // Se não está em cache, tenta carregar da API
-  const apiData = await loadVendasMensaisFromAPI(mes, ano);
-  if (apiData) {
-    VENDAS_CACHE[cacheKey] = apiData;
-    return apiData;
+  // Priorizar API se DATA_SOURCE for 'api'
+  if (DATA_SOURCE === 'api') {
+    try {
+      const apiData = await loadVendasMensaisFromAPI(mes, ano);
+      if (apiData && apiData.length > 0) {
+        VENDAS_CACHE[cacheKey] = apiData;
+        return apiData;
+      }
+    } catch (error) {
+      console.warn(`Erro ao carregar API para ${mes}/${ano}:`, error);
+    }
   }
 
-  // Fallback: filtra dos dados estáticos
+  // Fallback para dados estáticos (Excel)
   if (DATA.vendas_mensais) {
     const filtered = DATA.vendas_mensais.filter(row => {
       const [m, y] = row.Periodo.split('/');
       return parseInt(m) === mes && parseInt(y) === ano;
     });
-    VENDAS_CACHE[cacheKey] = filtered;
-    return filtered;
+    if (filtered.length > 0) {
+      VENDAS_CACHE[cacheKey] = filtered;
+      return filtered;
+    }
   }
 
   return [];
@@ -138,16 +200,22 @@ async function selectMes(mes, ano) {
     timestamp: Date.now()
   }));
 
-  // Tenta carregar dados da API para este período
-  loadVendasMensaisFromAPI(mes, ano).then(vendas => {
-    if (vendas) {
-      // Se conseguiu carregar da API, atualiza os dados
+  // Mostrar indicador de carregamento se usar API
+  if (DATA_SOURCE === 'api') {
+    showLoadingStatus(`Carregando dados de ${MESES_NOMES[mes]}/...`);
+  }
+
+  // Tenta carregar dados para este período
+  try {
+    const vendas = await getVendasMensais(mes, ano);
+    if (vendas && vendas.length > 0) {
       DATA.vendas_mensais = vendas;
-      VENDAS_CACHE[`${ano}_${mes}`] = vendas;
     }
-  }).catch(err => {
-    console.warn("Erro ao carregar dados da API:", err);
-  });
+  } catch (err) {
+    console.warn("Erro ao carregar dados:", err);
+  } finally {
+    hideLoadingStatus();
+  }
 
   renderMonthSelector();
   updateYearTabs();
@@ -311,37 +379,53 @@ async function loadDataFromAPI() {
 
 async function loadVendasMensaisFromAPI(mes, ano) {
   try {
-    // Tentar primeiro com dados reais
+    // Sempre tentar carregar da API (prioridade máxima)
     let response = await fetch(`/api/mobne/vendas-mensais?mes=${mes}&ano=${ano}`);
+
     if (!response.ok) {
       console.warn(`⚠️ API indisponível para ${mes}/${ano}`);
       return null;
     }
+
     let data = await response.json();
 
-    // Se não houver dados reais, tentar com dados de teste
+    // Se não houver dados reais, tentar com dados de teste (sempre com use_mock=true para garantir dados)
     if (!data.vendas_mensais || data.vendas_mensais.length === 0) {
-      console.log(`📊 Nenhum dado real para ${mes}/${ano}, carregando dados de teste...`);
+      console.log(`📊 Nenhum dado real para ${mes}/${ano}, solicitando dados de teste da API...`);
       response = await fetch(`/api/mobne/vendas-mensais?mes=${mes}&ano=${ano}&use_mock=true`);
-      if (response.ok) {
-        data = await response.json();
-        if (data.vendas_mensais && data.vendas_mensais.length > 0) {
-          console.log(`✓ Dados de teste carregados (${data.vendas_mensais.length} itens)`);
-          // Marcar que está usando dados de teste
-          window.USING_MOCK_DATA = true;
-        }
+
+      if (!response.ok) {
+        console.warn(`⚠️ API não conseguiu gerar dados de teste para ${mes}/${ano}`);
+        return null;
       }
+
+      data = await response.json();
+
+      if (data.vendas_mensais && data.vendas_mensais.length > 0) {
+        console.log(`✓ Dados de teste carregados (${data.vendas_mensais.length} itens)`);
+        // Marcar que está usando dados de teste
+        window.USING_MOCK_DATA = true;
+      } else {
+        console.warn(`⚠️ Nenhum dado retornado da API (mesmo com use_mock=true)`);
+        return null;
+      }
+    } else {
+      // Dados reais foram carregados
+      window.USING_MOCK_DATA = false;
     }
 
     return data.vendas_mensais || [];
   } catch (error) {
-    console.warn(`⚠️ Erro ao carregar vendas de ${mes}/${ano}:`, error.message);
+    console.warn(`⚠️ Erro ao carregar vendas de ${mes}/${ano} da API:`, error.message);
     return null;
   }
 }
 
 // ============================================================
 async function loadData() {
+  // Restore data source preference
+  restoreDataSource();
+
   // Tentar carregar dados da API Mobne
   const apiAvailable = await loadDataFromAPI();
 
@@ -367,6 +451,9 @@ async function loadData() {
   detectAvailablePeriods();
   restoreSelectedPeriod();
   renderMonthSelector();
+
+  // Update UI with data source info
+  updateDataSourceUI();
 }
 
 // ============================================================
