@@ -11,7 +11,7 @@ Uso:
   python sync_mobne_data.py --mes 2 --ano 2026 # sincroniza apenas Fev/2026
   python sync_mobne_data.py --ano 2025         # sincroniza todos os meses de 2025
 
-Requer: MOBNE_API_KEY como variável de ambiente
+Requer: MOBNE_API_KEY como variável de ambiente (ou em .env)
 """
 
 import json
@@ -22,6 +22,21 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from collections import defaultdict
+
+# Carregar variáveis de ambiente do .env
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # Se dotenv não está instalado, carregar manualmente
+    env_path = Path(__file__).parent / ".env"
+    if env_path.exists():
+        with open(env_path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    os.environ.setdefault(key.strip(), value.strip())
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -76,7 +91,7 @@ def agregar_vendas_por_categoria(vendas_raw: list, mes: int, ano: int) -> list:
     """
     Agrega vendas brutas do Mobne em formato vendas_mensais.json.
 
-    Input:  lista de pedidos Mobne (com Itens dentro)
+    Input:  lista de pedidos Mobne (com PedidoItens dentro)
     Output: lista de dicts agrupados por Categoria, com Periodo, Vlr_Venda, etc.
     """
     categorias = defaultdict(lambda: {
@@ -88,17 +103,33 @@ def agregar_vendas_por_categoria(vendas_raw: list, mes: int, ano: int) -> list:
     })
 
     for pedido in vendas_raw:
-        pedido_id = pedido.get("Id", pedido.get("Numero", id(pedido)))
-        itens = pedido.get("Itens", pedido.get("Items", []))
-        valor_total_pedido = pedido.get("ValorTotal", pedido.get("ValorFinal", 0)) or 0
+        pedido_id = pedido.get("PedidoVendaId", pedido.get("Id", pedido.get("Numero", id(pedido))))
+        itens = pedido.get("PedidoItens", pedido.get("Itens", pedido.get("Items", [])))
+        valor_total_pedido = pedido.get("VlrTotal", pedido.get("ValorTotal", pedido.get("ValorFinal", 0))) or 0
+
+        # Se não temos VlrTotal direto, calcular da soma dos itens
+        if not valor_total_pedido and itens:
+            valor_total_pedido = sum(i.get("VlrLiquidoItem", i.get("VrTotal", 0)) or 0 for i in itens)
 
         if itens:
             for item in itens:
-                cat = item.get("Categoria", item.get("DescricaoGrupo", "Sem Categoria")) or "Sem Categoria"
-                qtd = item.get("Quantidade", 1) or 1
-                vr_total = item.get("VrTotal", item.get("ValorTotal", 0)) or 0
+                # Extrair categoria - tentar vários nomes de campo
+                cat = (
+                    item.get("Categoria") or
+                    item.get("DescricaoGrupo") or
+                    item.get("NomeProduto", "") or
+                    "Sem Categoria"
+                ) or "Sem Categoria"
+
+                qtd = item.get("QtdPedida") or item.get("Quantidade", 1) or 1
+                vr_total = item.get("VlrLiquidoItem") or item.get("VrTotal", item.get("ValorTotal", 0)) or 0
                 custo = item.get("CustoMedio", item.get("VrCusto", 0)) or 0
-                lucro = vr_total - (custo * qtd) if custo else vr_total * 0.45
+
+                # Calcular lucro: se temos custo, usa ele; senão assume 45% de margem
+                if custo:
+                    lucro = vr_total - (custo * qtd)
+                else:
+                    lucro = vr_total * 0.45
 
                 categorias[cat]["Qtde_Venda"] += qtd
                 categorias[cat]["Qtde_Documentos"].add(pedido_id)
