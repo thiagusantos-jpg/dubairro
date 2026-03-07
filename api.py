@@ -282,6 +282,221 @@ async def listar_empresas():
 
 
 # ============================================================
+# MOBNE — VENDAS MENSAIS (Para Dashboard)
+# ============================================================
+
+@app.get("/api/mobne/vendas-mensais")
+async def mobne_vendas_mensais(
+    mes: int = Query(None, ge=1, le=12, description="Mês (1-12)"),
+    ano: int = Query(None, ge=2000, le=2100, description="Ano"),
+    empresa_id: str = Query(None, description="ID da empresa (padrão: empresa principal)"),
+):
+    """
+    Retorna dados de vendas mensais formatados para o dashboard
+
+    Query Parameters:
+    - mes: 1-12 (obrigatório)
+    - ano: 2000-2100 (obrigatório)
+    - empresa_id: ID da empresa (opcional, padrão: 218)
+
+    Response:
+    {
+        "vendas_mensais": [
+            {"Data": "2026-02-01", "Categoria": "Alimentos", "Produto": "Arroz", ...},
+            ...
+        ]
+    }
+    """
+    if not MOBNE_AVAILABLE:
+        return JSONResponse({"error": "Mobne não disponível"}, status_code=503)
+
+    api_key = os.getenv("MOBNE_API_KEY", "")
+    if not api_key:
+        return JSONResponse(
+            {"error": "MOBNE_API_KEY não configurado"},
+            status_code=400,
+        )
+
+    if mes is None or ano is None:
+        return JSONResponse(
+            {"error": "Parâmetros obrigatórios: mes (1-12) e ano"},
+            status_code=400,
+        )
+
+    try:
+        from datetime import datetime, timedelta
+
+        eid = str(empresa_id or MOBNE_EMPRESA_ID)
+
+        # Buscar vendas do mês
+        data_inicio = datetime(ano, mes, 1)
+        if mes == 12:
+            data_fim = datetime(ano + 1, 1, 1) - timedelta(days=1)
+        else:
+            data_fim = datetime(ano, mes + 1, 1) - timedelta(days=1)
+
+        client = MobneAPIClient(empresa_id=eid)
+        ok, vendas_raw = client.fetch_vendas(data_inicio, data_fim)
+
+        if not ok:
+            return JSONResponse(
+                {"error": f"Falha ao buscar vendas do Mobne para {mes:02d}/{ano}"},
+                status_code=502,
+            )
+
+        # Formatar dados para o formato esperado pelo dashboard
+        vendas_formatadas = []
+        for venda in vendas_raw:
+            # Extrai informações da venda do Mobne
+            data_venda = venda.get("DataEmissao", venda.get("Data", ""))
+
+            # Processa itens da venda
+            itens = venda.get("Itens", venda.get("Items", []))
+            valor_total = venda.get("ValorTotal", venda.get("ValorFinal", 0))
+
+            if itens:
+                # Se tem itens, cria um registro por item
+                for item in itens:
+                    vendas_formatadas.append({
+                        "Data": data_venda,
+                        "Categoria": item.get("Categoria", "Sem Categoria"),
+                        "Produto": item.get("Descricao", item.get("NomeProduto", "Produto")),
+                        "Quantidade": item.get("Quantidade", 1),
+                        "Valor_Unitario": item.get("VrUnitario", 0),
+                        "Vlr_Venda": item.get("VrTotal", 0),
+                        "Custo": item.get("CustoMedio", 0),
+                        "Vlr_Lucro": item.get("VrTotal", 0) - item.get("CustoMedio", 0),
+                    })
+            else:
+                # Se não tem itens, cria um registro único
+                vendas_formatadas.append({
+                    "Data": data_venda,
+                    "Categoria": "Geral",
+                    "Produto": f"Venda #{venda.get('Numero', 'N/A')}",
+                    "Quantidade": 1,
+                    "Valor_Unitario": valor_total,
+                    "Vlr_Venda": valor_total,
+                    "Custo": 0,
+                    "Vlr_Lucro": valor_total,
+                })
+
+        return JSONResponse({
+            "status": "success",
+            "mes": mes,
+            "ano": ano,
+            "empresa_id": eid,
+            "total_vendas": len(vendas_raw),
+            "total_itens": len(vendas_formatadas),
+            "vendas_mensais": vendas_formatadas,
+        })
+
+    except Exception as e:
+        return JSONResponse(
+            {"error": f"Erro ao buscar vendas do Mobne: {str(e)}"},
+            status_code=500,
+        )
+
+
+@app.get("/api/mobne/yoy")
+async def mobne_yoy(
+    ano_referencia: int = Query(2026, ge=2000, le=2100, description="Ano de referência"),
+    empresa_id: str = Query(None, description="ID da empresa (padrão: empresa principal)"),
+):
+    """
+    Retorna dados de comparação ano a ano (YoY) para cada mês
+
+    Query Parameters:
+    - ano_referencia: Ano para comparação (padrão: 2026)
+    - empresa_id: ID da empresa (opcional)
+
+    Response:
+    {
+        "yoy": [
+            {
+                "Mes": "Janeiro",
+                "Mes_Num": 1,
+                "Receita_2025": 50000.00,
+                "Receita_2026": 73244.04,
+                "Variacao_Percentual": 46.49,
+                ...
+            },
+            ...
+        ]
+    }
+    """
+    if not MOBNE_AVAILABLE:
+        return JSONResponse({"error": "Mobne não disponível"}, status_code=503)
+
+    api_key = os.getenv("MOBNE_API_KEY", "")
+    if not api_key:
+        return JSONResponse(
+            {"error": "MOBNE_API_KEY não configurado"},
+            status_code=400,
+        )
+
+    try:
+        from datetime import datetime, timedelta
+
+        eid = str(empresa_id or MOBNE_EMPRESA_ID)
+        client = MobneAPIClient(empresa_id=eid)
+
+        meses = [
+            "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+            "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+        ]
+
+        yoy_data = []
+
+        for mes_num in range(1, 13):
+            # Buscar dados do ano anterior
+            data_inicio_2025 = datetime(ano_referencia - 1, mes_num, 1)
+            if mes_num == 12:
+                data_fim_2025 = datetime(ano_referencia, 1, 1) - timedelta(days=1)
+            else:
+                data_fim_2025 = datetime(ano_referencia - 1, mes_num + 1, 1) - timedelta(days=1)
+
+            ok_2025, vendas_2025 = client.fetch_vendas(data_inicio_2025, data_fim_2025)
+            receita_2025 = sum(v.get("ValorTotal", v.get("ValorFinal", 0)) for v in vendas_2025) if ok_2025 else 0
+
+            # Buscar dados do ano atual
+            data_inicio_atual = datetime(ano_referencia, mes_num, 1)
+            if mes_num == 12:
+                data_fim_atual = datetime(ano_referencia + 1, 1, 1) - timedelta(days=1)
+            else:
+                data_fim_atual = datetime(ano_referencia, mes_num + 1, 1) - timedelta(days=1)
+
+            ok_atual, vendas_atual = client.fetch_vendas(data_inicio_atual, data_fim_atual)
+            receita_atual = sum(v.get("ValorTotal", v.get("ValorFinal", 0)) for v in vendas_atual) if ok_atual else 0
+
+            # Calcular variação
+            if receita_2025 > 0:
+                variacao = ((receita_atual - receita_2025) / receita_2025) * 100
+            else:
+                variacao = 100 if receita_atual > 0 else 0
+
+            yoy_data.append({
+                "Mes": meses[mes_num - 1],
+                "Mes_Num": mes_num,
+                f"Receita_{ano_referencia - 1}": round(receita_2025, 2),
+                f"Receita_{ano_referencia}": round(receita_atual, 2),
+                "Variacao_Percentual": round(variacao, 2),
+            })
+
+        return JSONResponse({
+            "status": "success",
+            "ano_referencia": ano_referencia,
+            "empresa_id": eid,
+            "yoy": yoy_data,
+        })
+
+    except Exception as e:
+        return JSONResponse(
+            {"error": f"Erro ao buscar dados YoY do Mobne: {str(e)}"},
+            status_code=500,
+        )
+
+
+# ============================================================
 # DASHBOARD — STATUS DE SINCRONIZAÇÃO
 # ============================================================
 

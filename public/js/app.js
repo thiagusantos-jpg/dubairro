@@ -49,6 +49,37 @@ function getSelectedMes() {
   return { nome, num: SELECTED_MES, ano: SELECTED_ANO };
 }
 
+// Cache para dados de vendas mensais carregados da API
+const VENDAS_CACHE = {};
+
+async function getVendasMensais(mes, ano) {
+  const cacheKey = `${ano}_${mes}`;
+
+  // Se já está em cache, retorna
+  if (VENDAS_CACHE[cacheKey]) {
+    return VENDAS_CACHE[cacheKey];
+  }
+
+  // Se não está em cache, tenta carregar da API
+  const apiData = await loadVendasMensaisFromAPI(mes, ano);
+  if (apiData) {
+    VENDAS_CACHE[cacheKey] = apiData;
+    return apiData;
+  }
+
+  // Fallback: filtra dos dados estáticos
+  if (DATA.vendas_mensais) {
+    const filtered = DATA.vendas_mensais.filter(row => {
+      const [m, y] = row.Periodo.split('/');
+      return parseInt(m) === mes && parseInt(y) === ano;
+    });
+    VENDAS_CACHE[cacheKey] = filtered;
+    return filtered;
+  }
+
+  return [];
+}
+
 function filterDataByPeriod(data, mes, ano) {
   return data.filter(row => {
     const [m, y] = row.Periodo.split('/');
@@ -85,7 +116,7 @@ function detectAvailablePeriods() {
   }
 }
 
-function selectMes(mes, ano) {
+async function selectMes(mes, ano) {
   if (ano !== SELECTED_ANO && !AVAILABLE_MESES[`${ano}_${mes}`]) {
     for (let i = 1; i <= 12; i++) {
       if (AVAILABLE_MESES[`${ano}_${i}`]) {
@@ -103,6 +134,17 @@ function selectMes(mes, ano) {
     ano: ano,
     timestamp: Date.now()
   }));
+
+  // Tenta carregar dados da API para este período
+  loadVendasMensaisFromAPI(mes, ano).then(vendas => {
+    if (vendas) {
+      // Se conseguiu carregar da API, atualiza os dados
+      DATA.vendas_mensais = vendas;
+      VENDAS_CACHE[`${ano}_${mes}`] = vendas;
+    }
+  }).catch(err => {
+    console.warn("Erro ao carregar dados da API:", err);
+  });
 
   renderMonthSelector();
   updateYearTabs();
@@ -238,11 +280,65 @@ function restoreUploadedDataFromLocalStorage() {
 // ============================================================
 // DATA LOADING
 // ============================================================
+// CARREGAR DADOS DA API MOBNE (ou estáticos como fallback)
+// ============================================================
+async function loadDataFromAPI() {
+  try {
+    console.log("🔄 Tentando carregar dados da API Mobne...");
+
+    // Buscar dados YoY da API
+    const yoyResponse = await fetch('/api/mobne/yoy?ano_referencia=2026');
+    if (!yoyResponse.ok) {
+      console.warn("⚠️ API YoY indisponível, usando dados estáticos");
+      return null;
+    }
+    const yoyData = await yoyResponse.json();
+    DATA.yoy = yoyData.yoy || yoyData.data || [];
+
+    console.log("✓ Dados YoY carregados da API:", DATA.yoy.length, "meses");
+
+    // Buscar dados de vendas mensais para o período selecionado (será feito sob demanda)
+    return true;
+  } catch (error) {
+    console.warn("⚠️ Erro ao carregar API Mobne:", error.message);
+    return null;
+  }
+}
+
+async function loadVendasMensaisFromAPI(mes, ano) {
+  try {
+    const response = await fetch(`/api/mobne/vendas-mensais?mes=${mes}&ano=${ano}`);
+    if (!response.ok) {
+      console.warn(`⚠️ API indisponível para ${mes}/${ano}`);
+      return null;
+    }
+    const data = await response.json();
+    return data.vendas_mensais || [];
+  } catch (error) {
+    console.warn(`⚠️ Erro ao carregar vendas de ${mes}/${ano}:`, error.message);
+    return null;
+  }
+}
+
+// ============================================================
 async function loadData() {
-  const files = ['vendas_mensais', 'vendas_diarias', 'produtos', 'calendario', 'yoy', 'erosao'];
-  const promises = files.map(f => fetch(`data/${f}.json`).then(r => r.json()));
-  const results = await Promise.all(promises);
-  files.forEach((f, i) => DATA[f] = results[i]);
+  // Tentar carregar dados da API Mobne
+  const apiAvailable = await loadDataFromAPI();
+
+  if (!apiAvailable) {
+    // Fallback para dados estáticos
+    console.log("📂 Carregando dados estáticos dos arquivos JSON...");
+    const files = ['vendas_mensais', 'vendas_diarias', 'produtos', 'calendario', 'yoy', 'erosao'];
+    const promises = files.map(f => fetch(`data/${f}.json`).then(r => r.json()));
+    const results = await Promise.all(promises);
+    files.forEach((f, i) => DATA[f] = results[i]);
+  } else {
+    // Carregar outros dados estáticos que não estão na API
+    const files = ['vendas_diarias', 'produtos', 'calendario', 'erosao'];
+    const promises = files.map(f => fetch(`data/${f}.json`).then(r => r.json()));
+    const results = await Promise.all(promises);
+    files.forEach((f, i) => DATA[f] = results[i]);
+  }
 
   // Restore any uploaded data from localStorage
   restoreUploadedDataFromLocalStorage();
