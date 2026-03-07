@@ -39,7 +39,9 @@ function deltaArrow(v, tol = 2) { if (Math.abs(v) <= tol) return '●'; return v
 
 function getMesRef(yoy) {
   const m26 = yoy.filter(r => r.Receita_2026 > 0);
-  if (m26.length > 0) { const last = m26[m26.length - 1]; return { nome: last.Mes, num: last.Mes_Num }
+  if (m26.length > 0) { const last = m26[m26.length - 1]; return { nome: last.Mes, num: last.Mes_Num }; }
+  return { nome: 'Janeiro', num: 1 };
+}
 
 // Month selector functions
 function getSelectedMes() {
@@ -146,10 +148,6 @@ function updateYearTabs() {
       btn.classList.add('active');
     }
   });
-}
-
-; }
-  return { nome: 'Janeiro', num: 1 };
 }
 
 function sumField(arr, field) { return arr.reduce((s, r) => s + (r[field] || 0), 0); }
