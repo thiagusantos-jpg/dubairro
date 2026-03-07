@@ -307,12 +307,28 @@ async function loadDataFromAPI() {
 
 async function loadVendasMensaisFromAPI(mes, ano) {
   try {
-    const response = await fetch(`/api/mobne/vendas-mensais?mes=${mes}&ano=${ano}`);
+    // Tentar primeiro com dados reais
+    let response = await fetch(`/api/mobne/vendas-mensais?mes=${mes}&ano=${ano}`);
     if (!response.ok) {
       console.warn(`⚠️ API indisponível para ${mes}/${ano}`);
       return null;
     }
-    const data = await response.json();
+    let data = await response.json();
+
+    // Se não houver dados reais, tentar com dados de teste
+    if (!data.vendas_mensais || data.vendas_mensais.length === 0) {
+      console.log(`📊 Nenhum dado real para ${mes}/${ano}, carregando dados de teste...`);
+      response = await fetch(`/api/mobne/vendas-mensais?mes=${mes}&ano=${ano}&use_mock=true`);
+      if (response.ok) {
+        data = await response.json();
+        if (data.vendas_mensais && data.vendas_mensais.length > 0) {
+          console.log(`✓ Dados de teste carregados (${data.vendas_mensais.length} itens)`);
+          // Marcar que está usando dados de teste
+          window.USING_MOCK_DATA = true;
+        }
+      }
+    }
+
     return data.vendas_mensais || [];
   } catch (error) {
     console.warn(`⚠️ Erro ao carregar vendas de ${mes}/${ano}:`, error.message);
@@ -377,6 +393,14 @@ function pageResumo() {
 
   let html = `<h2>📊 Resumo Executivo</h2><p class="page-subtitle">Como foi o mês? Estamos melhor ou pior que antes?</p>`;
   html += periodoBadge(mesNome, 2026) + '<hr class="divider">';
+
+  // Aviso se estiver usando dados de teste
+  if (window.USING_MOCK_DATA) {
+    html += '<div style="background: #FFF3CD; border-left: 4px solid #FFC107; padding: 12px; margin-bottom: 20px; border-radius: 4px;">';
+    html += '<strong style="color: #856404;">⚠️ Dados de Teste</strong><br>';
+    html += '<span style="color: #856404; font-size: 12px;">O Mobne ainda não tem vendas para este período. Mostrando dados simulados para demonstração.</span>';
+    html += '</div>';
+  }
 
   // KPI Row 1
   html += '<div class="kpi-grid kpi-grid-4">';
