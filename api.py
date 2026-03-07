@@ -8,7 +8,11 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import os
+import logging
 from pathlib import Path
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 from data_processor import DataProcessor
 
@@ -290,6 +294,7 @@ async def mobne_vendas_mensais(
     mes: int = Query(None, ge=1, le=12, description="Mês (1-12)"),
     ano: int = Query(None, ge=2000, le=2100, description="Ano"),
     empresa_id: str = Query(None, description="ID da empresa (padrão: empresa principal)"),
+    use_mock: bool = Query(False, description="Usar dados de teste (debug)"),
 ):
     """
     Retorna dados de vendas mensais formatados para o dashboard
@@ -298,6 +303,7 @@ async def mobne_vendas_mensais(
     - mes: 1-12 (obrigatório)
     - ano: 2000-2100 (obrigatório)
     - empresa_id: ID da empresa (opcional, padrão: 218)
+    - use_mock: true para usar dados de teste (debug)
 
     Response:
     {
@@ -346,39 +352,83 @@ async def mobne_vendas_mensais(
 
         # Formatar dados para o formato esperado pelo dashboard
         vendas_formatadas = []
-        for venda in vendas_raw:
-            # Extrai informações da venda do Mobne
-            data_venda = venda.get("DataEmissao", venda.get("Data", ""))
 
-            # Processa itens da venda
-            itens = venda.get("Itens", venda.get("Items", []))
-            valor_total = venda.get("ValorTotal", venda.get("ValorFinal", 0))
+        # Se não há dados reais e use_mock=true, usar dados de teste
+        if not vendas_raw and use_mock:
+            logger.info(f"Usando dados de teste para {mes:02d}/{ano}")
+            # Gerar dados de teste realistas
+            categorias = ["Alimentos", "Bebidas", "Higiene", "Limpeza", "Congelados"]
+            produtos = {
+                "Alimentos": ["Arroz 5kg", "Feijão 1kg", "Macarrão", "Pão", "Leite"],
+                "Bebidas": ["Suco 1L", "Refrigerante", "Água 1.5L", "Cerveja", "Vinho"],
+                "Higiene": ["Xampu", "Sabonete", "Papel Higiênico", "Desodorante"],
+                "Limpeza": ["Detergente", "Desinfetante", "Vassoura", "Pano"],
+                "Congelados": ["Frango", "Carne", "Peixe", "Alinha Fria"],
+            }
 
-            if itens:
-                # Se tem itens, cria um registro por item
-                for item in itens:
+            # Criar vendas de teste (10 transações ao longo do mês)
+            num_vendas = 10
+            for i in range(1, num_vendas + 1):
+                dia = (i * 3) % 28 + 1
+                data_venda = datetime(ano, mes, dia).strftime("%Y-%m-%d")
+
+                # 2-4 itens por venda
+                num_itens = (i % 3) + 2
+                for j in range(num_itens):
+                    categoria = categorias[j % len(categorias)]
+                    produto = produtos[categoria][(i + j) % len(produtos[categoria])]
+
+                    quantidade = (j + 1) * 2
+                    preco_unitario = 10 + (j * 5)
+                    valor_venda = quantidade * preco_unitario
+                    custo = valor_venda * 0.6
+                    lucro = valor_venda - custo
+
                     vendas_formatadas.append({
                         "Data": data_venda,
-                        "Categoria": item.get("Categoria", "Sem Categoria"),
-                        "Produto": item.get("Descricao", item.get("NomeProduto", "Produto")),
-                        "Quantidade": item.get("Quantidade", 1),
-                        "Valor_Unitario": item.get("VrUnitario", 0),
-                        "Vlr_Venda": item.get("VrTotal", 0),
-                        "Custo": item.get("CustoMedio", 0),
-                        "Vlr_Lucro": item.get("VrTotal", 0) - item.get("CustoMedio", 0),
+                        "Categoria": categoria,
+                        "Produto": produto,
+                        "Quantidade": quantidade,
+                        "Valor_Unitario": round(preco_unitario, 2),
+                        "Vlr_Venda": round(valor_venda, 2),
+                        "Custo": round(custo, 2),
+                        "Vlr_Lucro": round(lucro, 2),
                     })
-            else:
-                # Se não tem itens, cria um registro único
-                vendas_formatadas.append({
-                    "Data": data_venda,
-                    "Categoria": "Geral",
-                    "Produto": f"Venda #{venda.get('Numero', 'N/A')}",
-                    "Quantidade": 1,
-                    "Valor_Unitario": valor_total,
-                    "Vlr_Venda": valor_total,
-                    "Custo": 0,
-                    "Vlr_Lucro": valor_total,
-                })
+        else:
+            # Usar dados reais do Mobne
+            for venda in vendas_raw:
+                # Extrai informações da venda do Mobne
+                data_venda = venda.get("DataEmissao", venda.get("Data", ""))
+
+                # Processa itens da venda
+                itens = venda.get("Itens", venda.get("Items", []))
+                valor_total = venda.get("ValorTotal", venda.get("ValorFinal", 0))
+
+                if itens:
+                    # Se tem itens, cria um registro por item
+                    for item in itens:
+                        vendas_formatadas.append({
+                            "Data": data_venda,
+                            "Categoria": item.get("Categoria", "Sem Categoria"),
+                            "Produto": item.get("Descricao", item.get("NomeProduto", "Produto")),
+                            "Quantidade": item.get("Quantidade", 1),
+                            "Valor_Unitario": item.get("VrUnitario", 0),
+                            "Vlr_Venda": item.get("VrTotal", 0),
+                            "Custo": item.get("CustoMedio", 0),
+                            "Vlr_Lucro": item.get("VrTotal", 0) - item.get("CustoMedio", 0),
+                        })
+                else:
+                    # Se não tem itens, cria um registro único
+                    vendas_formatadas.append({
+                        "Data": data_venda,
+                        "Categoria": "Geral",
+                        "Produto": f"Venda #{venda.get('Numero', 'N/A')}",
+                        "Quantidade": 1,
+                        "Valor_Unitario": valor_total,
+                        "Vlr_Venda": valor_total,
+                        "Custo": 0,
+                        "Vlr_Lucro": valor_total,
+                    })
 
         return JSONResponse({
             "status": "success",
@@ -387,6 +437,7 @@ async def mobne_vendas_mensais(
             "empresa_id": eid,
             "total_vendas": len(vendas_raw),
             "total_itens": len(vendas_formatadas),
+            "using_mock_data": not vendas_raw and use_mock,
             "vendas_mensais": vendas_formatadas,
         })
 
