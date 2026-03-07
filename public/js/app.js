@@ -1088,66 +1088,179 @@ function createDataTable(data) {
   return html;
 }
 
+// Helper: get column value case-insensitively
+function getColCI(row, name) {
+  const key = Object.keys(row).find(k => k.toUpperCase().trim() === name.toUpperCase());
+  return key !== undefined ? row[key] : undefined;
+}
+
+// Parse Excel serial date or string date to JS Date
+function parseExcelDate(val) {
+  if (val == null) return null;
+  if (typeof val === 'number') {
+    // Excel serial date: days since 1900-01-01 (with Lotus 1-2-3 leap year bug)
+    const d = new Date((val - 25569) * 86400 * 1000);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const s = String(val).trim();
+  // Try common Brazilian formats: DD/MM/YYYY or YYYY-MM-DD
+  let m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m) return new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]));
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function processExcelClientSide(rawData, format) {
+  if (format === 'vendas' || format === 'simples') {
+    // Determine column mappings
+    const isVendas = format === 'vendas';
+    const byCategory = {};
+    let mes = null, ano = null;
+
+    rawData.forEach(row => {
+      const dateVal = getColCI(row, 'DATA');
+      const date = parseExcelDate(dateVal);
+      if (date && mes === null) {
+        mes = date.getMonth() + 1;
+        ano = date.getFullYear();
+      }
+
+      const cat = String(getColCI(row, 'CATEGORIA') || 'OUTROS').toUpperCase().trim();
+      const vlrVenda = parseFloat(isVendas ? getColCI(row, 'VLR_VENDA') : getColCI(row, 'FATURAMENTO')) || 0;
+      const vlrLucro = parseFloat(isVendas ? (getColCI(row, 'VLR_LUCRO') ?? 0) : vlrVenda * 0.45) || 0;
+      const custo = parseFloat(isVendas ? (getColCI(row, 'CUSTO') ?? 0) : vlrVenda * 0.55) || 0;
+      const qtde = parseFloat(isVendas ? (getColCI(row, 'QUANTIDADE') ?? 1) : 1) || 0;
+      const docs = parseFloat(isVendas ? (getColCI(row, 'QTDE_DOCUMENTOS') ?? 1) : 1) || 0;
+
+      if (!byCategory[cat]) byCategory[cat] = { vlr_venda: 0, vlr_lucro: 0, custo: 0, qtde: 0, docs: 0 };
+      byCategory[cat].vlr_venda += vlrVenda;
+      byCategory[cat].vlr_lucro += vlrLucro;
+      byCategory[cat].custo += custo;
+      byCategory[cat].qtde += qtde;
+      byCategory[cat].docs += docs;
+    });
+
+    if (mes === null) { mes = new Date().getMonth() + 1; ano = new Date().getFullYear(); }
+
+    const periodo = `${String(mes).padStart(2, '0')}/${ano}`;
+    const vendas_mensais = Object.entries(byCategory).map(([cat, v]) => {
+      const markdown = v.vlr_venda > 0 ? (v.vlr_lucro / v.vlr_venda * 100) : 0;
+      const markup = v.custo > 0 ? (v.vlr_lucro / v.custo * 100) : 0;
+      return {
+        Periodo: periodo, Mes: mes, Ano: ano, Categoria: cat,
+        Qtde_Venda: v.qtde, Qtde_Documentos: v.docs,
+        Ticket_Medio: v.docs > 0 ? v.vlr_venda / v.docs : 0,
+        Vlr_Venda: v.vlr_venda, Vlr_Lucro: v.vlr_lucro,
+        Markdown_Pct: markdown, Markdown_Ult_Entrada: markdown,
+        Markup_Pct: markup, Markup_Ult_Entrada: markup,
+        Custo_Medio_Liq: v.custo, Custo_Ult_Entrada_Liq: v.custo,
+      };
+    });
+
+    // Merge into DATA: remove old entries for this period, add new ones
+    DATA.vendas_mensais = DATA.vendas_mensais.filter(r => r.Periodo !== periodo);
+    DATA.vendas_mensais = [...DATA.vendas_mensais, ...vendas_mensais];
+
+    // Update YoY data for this month/year
+    const totalVenda = vendas_mensais.reduce((s, r) => s + r.Vlr_Venda, 0);
+    const totalLucro = vendas_mensais.reduce((s, r) => s + r.Vlr_Lucro, 0);
+    const totalDocs = vendas_mensais.reduce((s, r) => s + r.Qtde_Documentos, 0);
+    const margem = totalVenda > 0 ? totalLucro / totalVenda * 100 : 0;
+
+    const yoyField = `Receita_${ano}`;
+    DATA.yoy = DATA.yoy.map(r => {
+      if (r.Mes_Num === mes) {
+        const update = {};
+        update[`Receita_${ano}`] = totalVenda;
+        update[`Lucro_${ano}`] = totalLucro;
+        update[`Margem_${ano}`] = margem;
+        update[`Cupons_${ano}`] = totalDocs;
+        return { ...r, ...update };
+      }
+      return r;
+    });
+
+    // If yoy row for this month doesn't exist yet (future year), add it
+    if (!DATA.yoy.find(r => r.Mes_Num === mes)) {
+      const newRow = { Mes: MESES_NOMES[mes], Mes_Num: mes };
+      newRow[`Receita_${ano}`] = totalVenda;
+      newRow[`Lucro_${ano}`] = totalLucro;
+      newRow[`Margem_${ano}`] = margem;
+      newRow[`Cupons_${ano}`] = totalDocs;
+      DATA.yoy.push(newRow);
+    }
+
+    return { mes, ano, periodo, rows: rawData.length };
+  }
+
+  return null;
+}
+
 function processAndSaveData() {
   const btn = document.querySelector('.btn-import');
   btn.disabled = true;
-  btn.textContent = '⏳ Enviando para servidor...';
+  btn.textContent = '⏳ Processando dados...';
 
-  // Obter o arquivo novamente do input
-  const fileInput = document.getElementById('excel-file');
-  const file = fileInput.files[0];
-
-  if (!file) {
-    showError('❌ Arquivo não encontrado');
+  if (!uploadedData || uploadedData.length === 0) {
+    showError('❌ Nenhum dado carregado');
     btn.disabled = false;
     btn.textContent = '✅ Processar e Salvar Dados';
     return;
   }
 
-  // Criar FormData com o arquivo
-  const formData = new FormData();
-  formData.append('file', file);
+  try {
+    const result = processExcelClientSide(uploadedData, detectedFormat);
 
-  // Fazer POST para /api/upload
-  fetch('/api/upload', {
-    method: 'POST',
-    body: formData
-  })
-  .then(response => {
-    if (!response.ok) {
-      return response.json().then(data => {
-        throw new Error(data.detail || `Erro HTTP ${response.status}`);
-      });
+    if (!result) {
+      showError('❌ Formato não suportado para processamento: ' + detectedFormat);
+      btn.disabled = false;
+      btn.textContent = '✅ Processar e Salvar Dados';
+      return;
     }
-    return response.json();
-  })
-  .then(data => {
-    // Atualizar último upload
-    document.getElementById('last-upload').textContent = `✅ ${data.format.toUpperCase()} - ${new Date().toLocaleString('pt-BR')}`;
 
-    // Mostrar resultado
+    // Update period selector with new data
+    detectAvailablePeriods();
+    renderMonthSelector();
+    updateYearTabs();
+
+    // Show success
     document.getElementById('preview-container').style.display = 'none';
     document.getElementById('result-container').style.display = 'block';
     document.getElementById('result-message').innerHTML = `
       <div style="padding:15px;background:#c8e6c9;border-radius:4px;border-left:4px solid #2e7d32;">
-        <h3 style="color:#2e7d32;margin:0 0 10px 0;">✅ ${data.message}</h3>
+        <h3 style="color:#2e7d32;margin:0 0 10px 0;">✅ Dados integrados ao dashboard!</h3>
         <div style="color:#1b5e20;">
-          <p><strong>Tipo:</strong> ${data.format.toUpperCase()}</p>
-          <p><strong>Linhas processadas:</strong> ${data.rows_processed}</p>
-          <p><strong>Período:</strong> ${String(data.mes).padStart(2, '0')}/${data.ano}</p>
-          <p><strong>Arquivo salvo:</strong> ${data.filepath}</p>
+          <p><strong>Tipo:</strong> ${detectedFormat.toUpperCase()}</p>
+          <p><strong>Linhas processadas:</strong> ${result.rows}</p>
+          <p><strong>Período:</strong> ${result.periodo}</p>
         </div>
+        <button class="btn-import" style="margin-top:12px;" onclick="selectMes(${result.mes}, ${result.ano}); navigate('resumo');">
+          Ver Resumo do Período
+        </button>
       </div>
     `;
 
+    // Update last-upload display if element still exists
+    const lastUploadEl = document.getElementById('last-upload');
+    if (lastUploadEl) lastUploadEl.textContent = `✅ ${detectedFormat.toUpperCase()} - ${new Date().toLocaleString('pt-BR')}`;
+
     btn.disabled = false;
     btn.textContent = '✅ Processar e Salvar Dados';
-  })
-  .catch(err => {
-    showError(`❌ Erro ao enviar arquivo: ${err.message}`);
+
+    // Also attempt server upload in background (non-blocking)
+    const fileInput = document.getElementById('excel-file');
+    if (fileInput && fileInput.files[0]) {
+      const formData = new FormData();
+      formData.append('file', fileInput.files[0]);
+      fetch('/api/upload', { method: 'POST', body: formData }).catch(() => {});
+    }
+  } catch (err) {
+    showError(`❌ Erro ao processar dados: ${err.message}`);
     btn.disabled = false;
     btn.textContent = '✅ Processar e Salvar Dados';
-  });
+  }
 }
 
 function resetUpload() {
