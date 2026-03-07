@@ -90,11 +90,16 @@ function filterDataByPeriod(data, mes, ano) {
 function detectAvailablePeriods() {
   AVAILABLE_MESES = {};
 
-  // Check yoy data (from static files or loaded)
-  DATA.yoy.forEach(row => {
-    if (row.Receita_2025 > 0) AVAILABLE_MESES[`2025_${row.Mes_Num}`] = true;
-    if (row.Receita_2026 > 0) AVAILABLE_MESES[`2026_${row.Mes_Num}`] = true;
-  });
+  // Marcar TODOS os meses como disponíveis (mesmo que sem dados reais)
+  // A API retornará dados de teste se necessário
+  if (DATA.yoy && DATA.yoy.length > 0) {
+    DATA.yoy.forEach(row => {
+      // Marcar 2025 se tem dados
+      if (row.Receita_2025 > 0) AVAILABLE_MESES[`2025_${row.Mes_Num}`] = true;
+      // Marcar 2026 sempre (com dados reais ou teste)
+      AVAILABLE_MESES[`2026_${row.Mes_Num}`] = true;
+    });
+  }
 
   // Also check vendas_mensais data directly (for periods that may exist)
   if (DATA.vendas_mensais && DATA.vendas_mensais.length > 0) {
@@ -108,23 +113,21 @@ function detectAvailablePeriods() {
     });
   }
 
+  // Selecionar o último mês com dados reais, ou Janeiro/2026 como padrão
   const m26 = DATA.yoy.filter(r => r.Receita_2026 > 0);
   if (m26.length > 0) {
     const last = m26[m26.length - 1];
     SELECTED_MES = last.Mes_Num;
     SELECTED_ANO = 2026;
+  } else {
+    SELECTED_MES = 1;
+    SELECTED_ANO = 2026;
   }
 }
 
 async function selectMes(mes, ano) {
-  if (ano !== SELECTED_ANO && !AVAILABLE_MESES[`${ano}_${mes}`]) {
-    for (let i = 1; i <= 12; i++) {
-      if (AVAILABLE_MESES[`${ano}_${i}`]) {
-        mes = i;
-        break;
-      }
-    }
-  }
+  // Permitir clicar em qualquer mês (mesmo que inativo)
+  // A API retornará dados de teste se não houver dados reais
 
   SELECTED_MES = mes;
   SELECTED_ANO = ano;
@@ -181,17 +184,18 @@ function renderMonthSelector() {
     const key = `${SELECTED_ANO}_${i}`;
     const hasData = AVAILABLE_MESES[key];
 
+    // Permitir todos os meses (mesmo sem dados reais)
+    // A API retornará dados de teste se necessário
     if (!hasData) {
-      btn.disabled = true;
+      btn.classList.add('month-btn-empty'); // Estilo visual diferente, mas clicável
     }
 
     if (SELECTED_MES === i) {
       btn.classList.add('active');
     }
 
-    btn.onclick = () => {
-      if (hasData) selectMes(i, SELECTED_ANO);
-    };
+    // Permitir clicar em qualquer mês
+    btn.onclick = () => selectMes(i, SELECTED_ANO);
 
     container.appendChild(btn);
   }
