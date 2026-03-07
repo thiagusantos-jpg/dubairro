@@ -217,12 +217,18 @@ class MobneAPIClient:
         limit: int = 100,
         offset: int = 0,
         situacao: str = "F",
+        operacao_id: int = None,
     ) -> Tuple[bool, List[Dict]]:
         """
         Busca vendas (pedidos) do Mobne dentro de um período
 
         Args:
+            data_inicio: Data de início da busca
+            data_fim: Data de fim da busca
+            limit: Quantidade máxima de registros
+            offset: Deslocamento para paginação
             situacao: F=Faturado, C=Cancelado, A=Aberto
+            operacao_id: ID da operação (para filtrar cupom/nota fiscal)
         """
         if data_fim is None:
             data_fim = datetime.now()
@@ -237,9 +243,14 @@ class MobneAPIClient:
             f"?Filter.DataEmissaoDe={data_inicio_str}"
             f"&Filter.DataEmissaoAte={data_fim_str}"
             f"&Filter.Situacao={situacao}"
-            f"&PageSize={limit}"
-            f"&PageNumber={offset + 1}"
         )
+
+        # Adicionar filtro de operação se fornecido
+        if operacao_id is not None:
+            endpoint += f"&Filter.OperacaoId={operacao_id}"
+
+        endpoint += f"&PageSize={limit}&PageNumber={offset + 1}"
+
         success, response = self._make_request("GET", endpoint)
         if success:
             vendas = response.get("Data", {}).get("Items", [])
