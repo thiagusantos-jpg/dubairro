@@ -190,6 +190,38 @@ function margemColor(md) {
 }
 
 // ============================================================
+// DATA PERSISTENCE
+// ============================================================
+function saveUploadedDataToLocalStorage() {
+  const uploaded = {
+    vendas_mensais: DATA.vendas_mensais,
+    yoy: DATA.yoy,
+    timestamp: Date.now()
+  };
+  try {
+    localStorage.setItem('dubairro_uploaded_data', JSON.stringify(uploaded));
+  } catch (e) {
+    console.warn('Failed to save to localStorage:', e);
+  }
+}
+
+function restoreUploadedDataFromLocalStorage() {
+  try {
+    const saved = localStorage.getItem('dubairro_uploaded_data');
+    if (!saved) return false;
+    const { vendas_mensais, yoy } = JSON.parse(saved);
+    if (vendas_mensais && yoy) {
+      DATA.vendas_mensais = vendas_mensais;
+      DATA.yoy = yoy;
+      return true;
+    }
+  } catch (e) {
+    console.warn('Failed to restore from localStorage:', e);
+  }
+  return false;
+}
+
+// ============================================================
 // DATA LOADING
 // ============================================================
 async function loadData() {
@@ -198,10 +230,13 @@ async function loadData() {
   const results = await Promise.all(promises);
   files.forEach((f, i) => DATA[f] = results[i]);
 
-    // Initialize month selector
-    detectAvailablePeriods();
-    restoreSelectedPeriod();
-    renderMonthSelector();
+  // Restore any uploaded data from localStorage
+  restoreUploadedDataFromLocalStorage();
+
+  // Initialize month selector
+  detectAvailablePeriods();
+  restoreSelectedPeriod();
+  renderMonthSelector();
 }
 
 // ============================================================
@@ -1224,6 +1259,9 @@ function processAndSaveData() {
     detectAvailablePeriods();
     renderMonthSelector();
     updateYearTabs();
+
+    // Persist to localStorage so data survives page reload
+    saveUploadedDataToLocalStorage();
 
     // Show success
     document.getElementById('preview-container').style.display = 'none';
