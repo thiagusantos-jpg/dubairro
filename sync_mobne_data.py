@@ -51,10 +51,13 @@ MESES_NOMES = [
 ]
 
 
-def fetch_vendas_mes_completo(client: MobneAPIClient, mes: int, ano: int) -> list:
+def fetch_vendas_mes_completo(client: MobneAPIClient, mes: int, ano: int, operacao_id: int = None) -> list:
     """
     Busca TODAS as vendas de um mês com paginação automática.
     Retorna lista de pedidos (cada um pode ter múltiplos itens).
+
+    Args:
+        operacao_id: Se fornecido, filtra apenas por essa operação (ex: cupom fiscal, nota fiscal)
     """
     data_inicio = datetime(ano, mes, 1)
     if mes == 12:
@@ -72,6 +75,7 @@ def fetch_vendas_mes_completo(client: MobneAPIClient, mes: int, ano: int) -> lis
             data_fim=data_fim,
             limit=100,
             offset=page - 1,
+            operacao_id=operacao_id,
         )
 
         if not success or not vendas:
@@ -231,12 +235,15 @@ def salvar_json(path: Path, data):
     logger.info(f"Salvo: {path} ({len(data)} registros)")
 
 
-def sync(mes_filtro: int = None, ano_filtro: int = None):
+def sync(mes_filtro: int = None, ano_filtro: int = None, operacao_id: int = None):
     """
     Executa a sincronização completa.
 
     Se mes_filtro e ano_filtro forem fornecidos, sincroniza apenas aquele mês.
     Caso contrário, sincroniza Jan/2025 até o mês atual.
+
+    Args:
+        operacao_id: Se fornecido, filtra apenas por essa operação (ex: cupom fiscal, nota fiscal)
     """
     if not MOBNE_API_KEY:
         logger.error("MOBNE_API_KEY não configurado! Configure a variável de ambiente.")
@@ -294,8 +301,10 @@ def sync(mes_filtro: int = None, ano_filtro: int = None):
     for mes, ano in periodos:
         logger.info(f"\n{'='*50}")
         logger.info(f"Sincronizando {MESES_NOMES[mes]}/{ano}...")
+        if operacao_id:
+            logger.info(f"  (Filtrando por OperacaoId: {operacao_id})")
 
-        vendas_raw = fetch_vendas_mes_completo(client, mes, ano)
+        vendas_raw = fetch_vendas_mes_completo(client, mes, ano, operacao_id=operacao_id)
         logger.info(f"  → {len(vendas_raw)} pedidos encontrados")
 
         if vendas_raw:
@@ -353,9 +362,14 @@ def main():
     )
     parser.add_argument("--mes", type=int, help="Mês específico (1-12)")
     parser.add_argument("--ano", type=int, help="Ano específico (ex: 2025, 2026)")
+    parser.add_argument(
+        "--operacao",
+        type=int,
+        help="ID da operação (ex: 1=Cupom Fiscal, 2=Nota Fiscal PDV)"
+    )
     args = parser.parse_args()
 
-    sync(mes_filtro=args.mes, ano_filtro=args.ano)
+    sync(mes_filtro=args.mes, ano_filtro=args.ano, operacao_id=args.operacao)
 
 
 if __name__ == "__main__":
