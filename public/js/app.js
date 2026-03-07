@@ -144,8 +144,19 @@ async function getVendasMensais(mes, ano) {
 
 function filterDataByPeriod(data, mes, ano) {
   return data.filter(row => {
-    const [m, y] = row.Periodo.split('/');
-    return parseInt(m) === mes && parseInt(y) === ano;
+    // Detectar qual formato os dados estão
+    if (row.Periodo) {
+      // Formato Excel: "01/2026"
+      const [m, y] = row.Periodo.split('/');
+      return parseInt(m) === mes && parseInt(y) === ano;
+    } else if (row.Data) {
+      // Formato API: "2026-02-15"
+      const dateParts = row.Data.split('-');
+      const rowAno = parseInt(dateParts[0]);
+      const rowMes = parseInt(dateParts[1]);
+      return rowMes === mes && rowAno === ano;
+    }
+    return false;
   });
 }
 
@@ -414,7 +425,18 @@ async function loadVendasMensaisFromAPI(mes, ano) {
       window.USING_MOCK_DATA = false;
     }
 
-    return data.vendas_mensais || [];
+    // Transformar dados da API para formato compatível
+    let vendas = data.vendas_mensais || [];
+    vendas = vendas.map(row => ({
+      ...row,
+      // Adicionar campo Periodo se não existir
+      Periodo: row.Periodo || `${String(ano).slice(-2)}/${mes}`.padStart(2, '0') + '/' + ano,
+      // Garantir que temos os campos esperados
+      Mes: mes,
+      Ano: ano,
+    }));
+
+    return vendas;
   } catch (error) {
     console.warn(`⚠️ Erro ao carregar vendas de ${mes}/${ano} da API:`, error.message);
     return null;
