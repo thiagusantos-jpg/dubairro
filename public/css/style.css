@@ -667,3 +667,68 @@ body {
     text-align: center;
     padding: 6px;
 }
+
+/* ============================================================
+   DATA SOURCE TOGGLE
+   ============================================================ */
+.data-source-toggle {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.source-btn {
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #ccc;
+    font-size: 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-weight: 500;
+}
+
+.source-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: var(--yellow);
+    color: white;
+}
+
+.source-btn.active {
+    background: var(--yellow);
+    color: var(--dark);
+    border-color: var(--yellow);
+    font-weight: 600;
+}
+
+/* ============================================================
+   LOADING STATUS
+   ============================================================ */
+.loading-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: rgba(46, 134, 193, 0.1);
+    border: 1px solid rgba(46, 134, 193, 0.3);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--blue);
+    margin-bottom: 12px;
+}
+
+.spinner-mini {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid rgba(46, 134, 193, 0.3);
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
