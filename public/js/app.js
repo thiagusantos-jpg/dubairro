@@ -58,10 +58,24 @@ function filterDataByPeriod(data, mes, ano) {
 
 function detectAvailablePeriods() {
   AVAILABLE_MESES = {};
+
+  // Check yoy data (from static files or loaded)
   DATA.yoy.forEach(row => {
     if (row.Receita_2025 > 0) AVAILABLE_MESES[`2025_${row.Mes_Num}`] = true;
     if (row.Receita_2026 > 0) AVAILABLE_MESES[`2026_${row.Mes_Num}`] = true;
   });
+
+  // Also check vendas_mensais data directly (for periods that may exist)
+  if (DATA.vendas_mensais && DATA.vendas_mensais.length > 0) {
+    const periods = {};
+    DATA.vendas_mensais.forEach(row => {
+      const key = `${row.Ano}_${row.Mes}`;
+      periods[key] = true;
+    });
+    Object.keys(periods).forEach(period => {
+      AVAILABLE_MESES[period] = true;
+    });
+  }
 
   const m26 = DATA.yoy.filter(r => r.Receita_2026 > 0);
   if (m26.length > 0) {
