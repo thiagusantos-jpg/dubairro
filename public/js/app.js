@@ -22,6 +22,11 @@ let DATA = {};
 let CUSTO_FIXO = CUSTO_FIXO_DEFAULT;
 let currentPage = 'resumo';
 
+// Month selector state
+let SELECTED_MES = null;      // Mês selecionado (1-12)
+let SELECTED_ANO = 2026;      // Ano selecionado
+let AVAILABLE_MESES = {};     // Mapa de períodos disponíveis
+
 // ============================================================
 // HELPERS
 // ============================================================
@@ -34,7 +39,116 @@ function deltaArrow(v, tol = 2) { if (Math.abs(v) <= tol) return '●'; return v
 
 function getMesRef(yoy) {
   const m26 = yoy.filter(r => r.Receita_2026 > 0);
-  if (m26.length > 0) { const last = m26[m26.length - 1]; return { nome: last.Mes, num: last.Mes_Num }; }
+  if (m26.length > 0) { const last = m26[m26.length - 1]; return { nome: last.Mes, num: last.Mes_Num }
+
+// Month selector functions
+function getSelectedMes() {
+  const nome = MESES_NOMES[SELECTED_MES] || 'Janeiro';
+  return { nome, num: SELECTED_MES, ano: SELECTED_ANO };
+}
+
+function filterDataByPeriod(data, mes, ano) {
+  return data.filter(row => {
+    const [m, y] = row.Periodo.split('/');
+    return parseInt(m) === mes && parseInt(y) === ano;
+  });
+}
+
+function detectAvailablePeriods() {
+  AVAILABLE_MESES = {};
+  DATA.yoy.forEach(row => {
+    if (row.Receita_2025 > 0) AVAILABLE_MESES[`2025_${row.Mes_Num}`] = true;
+    if (row.Receita_2026 > 0) AVAILABLE_MESES[`2026_${row.Mes_Num}`] = true;
+  });
+
+  const m26 = DATA.yoy.filter(r => r.Receita_2026 > 0);
+  if (m26.length > 0) {
+    const last = m26[m26.length - 1];
+    SELECTED_MES = last.Mes_Num;
+    SELECTED_ANO = 2026;
+  }
+}
+
+function selectMes(mes, ano) {
+  if (ano !== SELECTED_ANO && !AVAILABLE_MESES[`${ano}_${mes}`]) {
+    for (let i = 1; i <= 12; i++) {
+      if (AVAILABLE_MESES[`${ano}_${i}`]) {
+        mes = i;
+        break;
+      }
+    }
+  }
+
+  SELECTED_MES = mes;
+  SELECTED_ANO = ano;
+
+  localStorage.setItem('dubairro_selected_period', JSON.stringify({
+    mes: mes,
+    ano: ano,
+    timestamp: Date.now()
+  }));
+
+  renderMonthSelector();
+  updateYearTabs();
+  navigate(currentPage);
+}
+
+function restoreSelectedPeriod() {
+  const saved = localStorage.getItem('dubairro_selected_period');
+  if (saved) {
+    try {
+      const { mes, ano } = JSON.parse(saved);
+      if (AVAILABLE_MESES[`${ano}_${mes}`]) {
+        SELECTED_MES = mes;
+        SELECTED_ANO = ano;
+        return;
+      }
+    } catch (e) {
+      console.warn('Invalid saved period:', e);
+    }
+  }
+}
+
+function renderMonthSelector() {
+  const container = document.getElementById('month-buttons');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  for (let i = 1; i <= 12; i++) {
+    const btn = document.createElement('button');
+    btn.className = 'month-btn';
+    btn.textContent = MESES_LABELS[i - 1];
+
+    const key = `${SELECTED_ANO}_${i}`;
+    const hasData = AVAILABLE_MESES[key];
+
+    if (!hasData) {
+      btn.disabled = true;
+    }
+
+    if (SELECTED_MES === i) {
+      btn.classList.add('active');
+    }
+
+    btn.onclick = () => {
+      if (hasData) selectMes(i, SELECTED_ANO);
+    };
+
+    container.appendChild(btn);
+  }
+}
+
+function updateYearTabs() {
+  document.querySelectorAll('.tab-btn-period').forEach(btn => {
+    btn.classList.remove('active');
+    if (parseInt(btn.dataset.year) === SELECTED_ANO) {
+      btn.classList.add('active');
+    }
+  });
+}
+
+; }
   return { nome: 'Janeiro', num: 1 };
 }
 
@@ -85,14 +199,19 @@ async function loadData() {
   const promises = files.map(f => fetch(`data/${f}.json`).then(r => r.json()));
   const results = await Promise.all(promises);
   files.forEach((f, i) => DATA[f] = results[i]);
+
+    // Initialize month selector
+    detectAvailablePeriods();
+    restoreSelectedPeriod();
+    renderMonthSelector();
 }
 
 // ============================================================
 // PAGE 1: RESUMO EXECUTIVO
 // ============================================================
 function pageResumo() {
-  const vm = DATA.vendas_mensais, yoy = DATA.yoy, produtos = DATA.produtos;
-  const { nome: mesNome, num: mesNum } = getMesRef(yoy);
+  const vm = filterDataByPeriod(DATA.vendas_mensais, SELECTED_MES, SELECTED_ANO), yoy = DATA.yoy, produtos = DATA.produtos;
+  const { nome: mesNome, num: mesNum, ano: mesAno } = getSelectedMes();
 
   const fat = sumField(vm, 'Vlr_Venda'), lb = sumField(vm, 'Vlr_Lucro'), ll = lb - CUSTO_FIXO;
   const mb = safeDiv(lb, fat) * 100, mr = safeDiv(ll, fat) * 100;
@@ -212,8 +331,8 @@ function renderTop10Chart(top10) {
 // PAGE 2: INTELIGENCIA DE PRECOS
 // ============================================================
 function pagePrecos() {
-  const vm = DATA.vendas_mensais, erosao = DATA.erosao, produtos = DATA.produtos;
-  const { nome: mesNome } = getMesRef(DATA.yoy);
+  const vm = filterDataByPeriod(DATA.vendas_mensais, SELECTED_MES, SELECTED_ANO), erosao = DATA.erosao, produtos = DATA.produtos;
+  const { nome: mesNome, ano: mesAno } = getSelectedMes();
   const tv = sumField(vm, 'Vlr_Venda');
   const mdm = safeDiv(vm.reduce((s, r) => s + (r.Vlr_Venda || 0) * (r.Markdown_Pct || 0) / 100, 0), tv) * 100;
   const cs = erosao.filter(r => r.Alerta && r.Alerta.includes('SUBIU'));
@@ -316,7 +435,7 @@ function pagePrecos() {
 // ============================================================
 function pageMapa() {
   const produtos = DATA.produtos;
-  const { nome: mesNome } = getMesRef(DATA.yoy);
+  const { nome: mesNome, ano: mesAno } = getSelectedMes();
   const est = produtos.filter(p => p.Classificacao && p.Classificacao.includes('Estrela'));
   const ger = produtos.filter(p => p.Classificacao && p.Classificacao.includes('Gerador'));
   const opo = produtos.filter(p => p.Classificacao && p.Classificacao.includes('Oportunidade'));
@@ -398,8 +517,8 @@ function pageMapa() {
 // PAGE 4: DIAGNOSTICO DE FATURAMENTO
 // ============================================================
 function pageDiagnostico() {
-  const vm = DATA.vendas_mensais, vd = DATA.vendas_diarias, yoy = DATA.yoy;
-  const { nome: mesNome } = getMesRef(yoy);
+  const vm = filterDataByPeriod(DATA.vendas_mensais, SELECTED_MES, SELECTED_ANO), vd = DATA.vendas_diarias, yoy = DATA.yoy;
+  const { nome: mesNome, ano: mesAno } = getSelectedMes();
   const fat = sumField(vm, 'Vlr_Venda'), cup = sumField(vm, 'Qtde_Documentos'), tk = safeDiv(fat, cup);
   const yoyMes = yoy.filter(r => r.Receita_2026 > 0);
   let c25 = 0, t25 = 0, vc = 0, vt = 0, r25 = 0;
@@ -491,6 +610,7 @@ function pageDiagnostico() {
 // PAGE 5: SAZONALIDADE E TENDENCIAS
 // ============================================================
 function pageSazonalidade() {
+  const { ano: mesAno } = getSelectedMes();
   const yoy = DATA.yoy, produtos = DATA.produtos;
   const fa25 = sumField(yoy, 'Receita_2025'), fmm25 = safeDiv(fa25, 12), la25 = sumField(yoy, 'Lucro_2025');
   const m26 = yoy.filter(r => r.Receita_2026 > 0), fa26 = sumField(m26, 'Receita_2026');
@@ -604,8 +724,8 @@ function pageSazonalidade() {
 // PAGE 6: VISAO FUTURISTA
 // ============================================================
 function pageVisao() {
-  const yoy = DATA.yoy, vm = DATA.vendas_mensais, produtos = DATA.produtos;
-  const { nome: mesNome, num: mesNum } = getMesRef(yoy);
+  const yoy = DATA.yoy, vm = filterDataByPeriod(DATA.vendas_mensais, SELECTED_MES, SELECTED_ANO), produtos = DATA.produtos;
+  const { nome: mesNome, num: mesNum, ano: mesAno } = getSelectedMes();
   const fat = sumField(vm, 'Vlr_Venda'), lb = sumField(vm, 'Vlr_Lucro'), mg = safeDiv(lb, fat) * 100;
   const fmm25 = safeDiv(sumField(yoy, 'Receita_2025'), 12);
 
