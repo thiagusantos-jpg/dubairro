@@ -2,22 +2,5 @@
   "outputDirectory": "public",
   "public": true,
   "cleanUrls": true,
-  "trailingSlash": false,
-  "functions": {
-    "api/index.py": {
-      "runtime": "python@3.11"
-    }
-  },
-  "routes": [
-    {
-      "src": "/api/.*",
-      "dest": "/api/index.py"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/public/$1"
-    }
-  ],
-  "buildCommand": "pip install -r requirements.txt",
-  "installCommand": "pip install -r requirements.txt"
+  "trailingSlash": false
 }
