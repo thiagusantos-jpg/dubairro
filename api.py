@@ -475,13 +475,40 @@ async def mobne_yoy(
         ]
     }
     """
+    # Tentar carregar dados estáticos como fallback
+    static_yoy_path = Path(__file__).parent / "public" / "data" / "yoy.json"
+
     if not MOBNE_AVAILABLE:
-        return JSONResponse({"error": "Mobne não disponível"}, status_code=503)
+        # Fallback para dados estáticos
+        if static_yoy_path.exists():
+            import json
+            with open(static_yoy_path, 'r') as f:
+                yoy_data = json.load(f)
+            return JSONResponse({
+                "status": "success",
+                "ano_referencia": ano_referencia,
+                "enterprise_id": empresa_id or MOBNE_EMPRESA_ID,
+                "source": "static",
+                "yoy": yoy_data,
+            })
+        return JSONResponse({"error": "Mobne não disponível e dados estáticos não encontrados"}, status_code=503)
 
     api_key = os.getenv("MOBNE_API_KEY", "")
     if not api_key:
+        # Fallback para dados estáticos se API Key não configurado
+        if static_yoy_path.exists():
+            import json
+            with open(static_yoy_path, 'r') as f:
+                yoy_data = json.load(f)
+            return JSONResponse({
+                "status": "success",
+                "ano_referencia": ano_referencia,
+                "empresa_id": empresa_id or MOBNE_EMPRESA_ID,
+                "source": "static",
+                "yoy": yoy_data,
+            })
         return JSONResponse(
-            {"error": "MOBNE_API_KEY não configurado"},
+            {"error": "MOBNE_API_KEY não configurado e dados estáticos não encontrados"},
             status_code=400,
         )
 
@@ -537,10 +564,25 @@ async def mobne_yoy(
             "status": "success",
             "ano_referencia": ano_referencia,
             "empresa_id": eid,
+            "source": "mobne",
             "yoy": yoy_data,
         })
 
     except Exception as e:
+        # Fallback para dados estáticos quando API falha
+        if static_yoy_path.exists():
+            import json
+            with open(static_yoy_path, 'r') as f:
+                yoy_data = json.load(f)
+            return JSONResponse({
+                "status": "success",
+                "ano_referencia": ano_referencia,
+                "empresa_id": empresa_id or MOBNE_EMPRESA_ID,
+                "source": "static",
+                "error": f"Mobne falhou: {str(e)}. Usando dados estáticos.",
+                "yoy": yoy_data,
+            })
+
         return JSONResponse(
             {"error": f"Erro ao buscar dados YoY do Mobne: {str(e)}"},
             status_code=500,
