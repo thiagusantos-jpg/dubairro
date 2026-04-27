@@ -17,4 +17,4 @@ python-dotenv>=1.0.0
 
 # Opcional: Para sincronização assíncrona
 aiohttp>=3.9.0
-APScheduler>=3.10.0
+APScheduler>=3.11.2
